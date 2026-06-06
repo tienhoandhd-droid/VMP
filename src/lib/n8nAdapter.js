@@ -18,7 +18,7 @@ const lc = (v) => s(v).toLowerCase();
 
 // Chuẩn hoá ngày -> "yyyy-mm-dd" (app dùng định dạng này).
 // Hỗ trợ: dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, và chuỗi ISO có giờ.
-function toISO(v) {
+export function toISO(v) {
   const t = s(v);
   if (!t) return "";
   // yyyy-mm-dd hoặc yyyy/mm/dd (đã đúng thứ tự năm trước)
@@ -53,23 +53,36 @@ function mapClass(phanLoai) {
   return "tb"; // mặc định
 }
 
-// Bộ phận quản lý -> phòng app: sx | cd | kho | qc | qa
+// Bộ phận quản lý -> phòng app: sx | cd | kho | rd | qa
+// (Giá trị thật trong Sheet: XSX, Kho, RD, QA, Cơ điện, "XSX, Kho"…)
 function mapDept(boPhan) {
   const x = lc(boPhan);
-  if (/sản xuất|san xuat|xưởng|xuong|production|sx/.test(x)) return "sx";
-  if (/cơ điện|co dien|mep|kỹ thuật|ky thuat|engineering|cđ|cd\b/.test(x)) return "cd";
-  if (/kho|warehouse/.test(x)) return "kho";
-  if (/qc|kiểm nghiệm|kiem nghiem|quality control|lab/.test(x)) return "qc";
-  if (/qa|qlcl|đảm bảo|dam bao|quality assurance|chất lượng|chat luong/.test(x)) return "qa";
+  if (/xsx|sản xuất|san xuat|xưởng|xuong|production|\bsx\b/.test(x)) return "sx";
+  if (/cơ điện|co dien|mep|kỹ thuật|ky thuat|engineering|cđ|\bcd\b/.test(x)) return "cd";
+  if (/\bkho\b|warehouse/.test(x)) return "kho";
+  if (/\brd\b|r&d|r & d|nghiên cứu|nghien cuu|research|qc|kiểm nghiệm|kiem nghiem|lab/.test(x)) return "rd";
+  if (/\bqa\b|qlcl|đảm bảo|dam bao|quality assurance|chất lượng|chat luong/.test(x)) return "qa";
   return "qa"; // mặc định
 }
 
-// Mức độ tới hạn (GxP) -> Cao | TB | Thấp
-function mapCrit(v) {
+// Suy ra MỨC RỦI RO từ "Phân loại báo cáo" (dùng cho view QRM khi Sheet
+// chưa có cột mức tới hạn riêng). Vô khuẩn/Nhiễm khuẩn = rủi ro cao nhất.
+function critFromReportClass(v) {
   const x = lc(v);
-  if (/cao|high|critical|nghiêm trọng|nghiem trong/.test(x)) return "Cao";
-  if (/thấp|thap|low/.test(x)) return "Thấp";
+  if (/vô khuẩn|vo khuan|sterile|aseptic/.test(x)) return "Cao";
+  if (/nhiễm khuẩn|nhiem khuan|microbial|micro/.test(x)) return "Cao";
+  if (/hóa lý|hoa ly|physico|chemical/.test(x)) return "TB";
+  if (/không phụ thuộc|khong phu thuoc|độc lập|doc lap|independent/.test(x)) return "Thấp";
   return "TB";
+}
+
+// "Điểm trọng yếu" là điểm số 1–9 (càng cao càng tới hạn) -> Cao/TB/Thấp.
+function critFromScore(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return null;
+  if (n >= 7) return "Cao";
+  if (n >= 4) return "TB";
+  return "Thấp";
 }
 
 // Chuẩn hoá trạng thái 1 cột -> done | prog | todo | "" (rỗng = chưa có)
@@ -131,6 +144,10 @@ export function adaptFromN8n(payload) {
     if (!code) continue;
 
     // --- Object (gộp theo mã đối tượng) ---
+    const need = normStatus(r.td) === "done" || /^(x|y|yes|có|co)$/.test(lc(r.td)) || lc(r.show) === "x" || !!s(r.dl_vmp);
+    const score = parseInt(r.diem_trong_yeu, 10);
+    const effort = parseFloat(r.so_ngay_cong);
+    const crit = critFromScore(r.diem_trong_yeu) || critFromReportClass(r.phan_loai_bc);
     if (!objMap.has(code)) {
       objMap.set(code, {
         code,
@@ -139,13 +156,21 @@ export function adaptFromN8n(payload) {
         dept: mapDept(r.bo_phan),
         area: s(r.khu_vuc) || "—",
         line: s(r.line) || "—",
-        grade: "—",
+        grade: isNaN(score) ? "—" : String(score),  // điểm trọng yếu 1–9
         gxp: "GxP",
-        crit: mapCrit(r.phan_loai_bc),
+        crit,
         freq: parseInt(r.tan_suat, 10) || 12,
-        need: normStatus(r.td) === "done" || lc(r.td) === "x" || lc(r.show) === "x" || !!s(r.dl_vmp),
+        need,
         reason: "",
       });
+    } else {
+      // Một số cột đối tượng chỉ điền ở dòng đầu nhóm (ô gộp) → lấp từ dòng sau.
+      const o = objMap.get(code);
+      if ((!o.name || o.name === code) && s(r.ten)) o.name = s(r.ten);
+      if (o.cls === "tb" && s(r.phan_loai)) o.cls = mapClass(r.phan_loai);
+      if (o.area === "—" && s(r.khu_vuc)) o.area = s(r.khu_vuc);
+      if (critFromScore(r.diem_trong_yeu)) o.crit = critFromScore(r.diem_trong_yeu);
+      else if (s(r.phan_loai_bc)) o.crit = critFromReportClass(r.phan_loai_bc);
     }
 
     // --- Activity (mỗi dòng Sheet = 1 hạng mục thẩm định) ---
@@ -154,8 +179,11 @@ export function adaptFromN8n(payload) {
       id,
       code,
       vtype: (s(r.loai_td) || "PQ").toUpperCase(),
-      dep: s(r.phan_loai_bc) || "Độc lập", // dùng để tính mốc T-5-BC; mặc định "Độc lập"
+      dep: s(r.phan_loai_bc) || "Không phụ thuộc", // dùng để tính mốc T-5-BC
       owner: s(r.qa) || s(r.ns_khac) || "—",
+      effort: isNaN(effort) ? null : effort,        // số ngày công thực tế (1–5)
+      score: isNaN(score) ? null : score,           // điểm trọng yếu (1–9)
+      crit,
       target: toISO(r.dl_vmp) || toISO(r.dl_bao_cao) || "",
       st: deriveSt(r, today),
       docDone: normStatus(r.tt_bao_cao) === "done",
@@ -172,6 +200,18 @@ export function adaptFromN8n(payload) {
     activities: acts,
     source: "n8n",
     count: rows.length,
+  };
+}
+
+/* Tính lại các trường suy diễn (st, docDone, target) cho 1 hạng mục sau khi
+ * người dùng sửa dữ liệu gốc trên web — để giao diện cập nhật ngay tức thì. */
+export function deriveActivityFields(raw) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return {
+    st: deriveSt(raw, today),
+    docDone: normStatus(raw.tt_bao_cao) === "done",
+    target: toISO(raw.dl_vmp) || toISO(raw.dl_bao_cao) || "",
   };
 }
 
