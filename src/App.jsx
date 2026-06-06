@@ -8,7 +8,7 @@ import {
   GanttChartSquare, Radar, Cloud, Link2, Pencil, Trash2, Save, Warehouse, Wind, Truck, FileText,
 } from "lucide-react";
 import { loadConn, saveConn, clearConn, loadUser, saveUser } from "./lib/config.js";
-import { fetchVmpData, postToN8n, buildPing } from "./lib/n8nAdapter.js";
+import { fetchVmpData, postToN8n, buildPing, buildUpdateRow, toISO, deriveActivityFields } from "./lib/n8nAdapter.js";
 
 /* ===================== Palette — Magical Pastel · Hồng (đã tăng tương phản) ===================== */
 const C = {
@@ -121,9 +121,11 @@ const SEED_ACT = [
 ];
 
 const USERS = {
-  admin: { pass: "admin@123", name: "Nguyễn Văn A", role: "Quản trị hệ thống", perm: "admin" },
-  vqteam: { pass: "vq@123", name: "Hoàn", role: "V/Q Team — QLCL", perm: "edit" },
-  sanxuat: { pass: "sx@123", name: "Trần Thị B", role: "Bộ phận Sản xuất", perm: "view" },
+  admin: { pass: "admin@123", name: "Quản trị hệ thống", role: "Admin", perm: "admin" },
+  hoan: { pass: "hoan@123", name: "Hoàn", role: "V/Q Team — QLCL", perm: "admin" },
+  my: { pass: "my@123", name: "My", role: "V/Q Team — QLCL", perm: "admin" },
+  nhi: { pass: "nhi@123", name: "Nhi", role: "V/Q Team — QLCL", perm: "admin" },
+  bophan: { pass: "bp@123", name: "NV Bộ phận", role: "XSX / Kho / RD / Cơ điện", perm: "edit" },
 };
 const PERM_LABEL = { admin: "Quản trị", edit: "Chỉnh sửa", view: "Chỉ xem" };
 
@@ -305,7 +307,7 @@ function LoginScreen({ users, onLogin }) {
             {err && <div style={{ color: C.raspText, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}><XCircle size={15} /> {err}</div>}
             <button onClick={submit} style={{ ...btnPrimary, marginTop: 4, padding: "14px", borderRadius: 16, fontSize: 15, boxShadow: "0 8px 20px rgba(190,69,116,.35)" }}>Đăng nhập</button>
           </div>
-          <div style={{ marginTop: 22, padding: "13px 15px", borderRadius: 14, background: "#fff", border: `1.5px solid ${C.pinkSoft}`, fontSize: 11.5, color: C.plumSoft, lineHeight: 1.7, fontWeight: 600 }}><b style={{ color: C.pinkText }}>Tài khoản demo:</b><br /><code>admin / admin@123</code> · <code>vqteam / vq@123</code> · <code>sanxuat / sx@123</code></div>
+          <div style={{ marginTop: 22, padding: "13px 15px", borderRadius: 14, background: "#fff", border: `1.5px solid ${C.pinkSoft}`, fontSize: 11.5, color: C.plumSoft, lineHeight: 1.7, fontWeight: 600 }}><b style={{ color: C.pinkText }}>Tài khoản demo:</b><br /><code>hoan / hoan@123</code> (admin — sửa được mục gốc)<br /><code>bophan / bp@123</code> (chỉ nhập tiến độ dashboard)</div>
         </div>
       </div>
     </div>
@@ -338,8 +340,10 @@ const NAV = [
   { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
   { id: "timeline", label: "Timeline VMP", icon: GanttChartSquare },
   { id: "inventory", label: "Danh mục đối tượng", icon: Boxes },
+  { id: "update", label: "Cập nhật tiến độ", icon: Pencil },
   { id: "alerts", label: "Cảnh báo & Tái thẩm định", icon: Radar },
   { id: "risk", label: "Đánh giá rủi ro (QRM)", icon: ShieldAlert },
+  { id: "workload", label: "Tải công việc", icon: Activity },
   { id: "reports", label: "Báo cáo & AI", icon: FileBarChart },
   { id: "connect", label: "Kết nối dữ liệu", icon: Cloud },
 ];
@@ -766,6 +770,128 @@ function EditObjModal({ obj, isNew, onClose, onSave }) {
     </Modal>
   );
 }
+/* ===== DASHBOARD tier: nhập tiến độ thực tế (mọi tài khoản) ===== */
+const TT_OPTS = ["", "Chưa thực hiện", "Đang thực hiện", "Hoàn thành"];
+function ROField({ label, value }) {
+  return <div style={FIELD}><span style={LBL}>{label}</span><div style={{ ...INP, background: C.lavSoft, color: C.plumSoft, borderColor: C.lavSoft, display: "flex", alignItems: "center", minHeight: 20 }}>{value || "—"}</div></div>;
+}
+function ProgressEditModal({ act, onClose, onSave }) {
+  const raw = act._raw || {};
+  const init = {
+    ngay_de_cuong: toISO(raw.ngay_de_cuong), tt_de_cuong: raw.tt_de_cuong || "",
+    lich_td: raw.lich_td || "",
+    ngay_tham_dinh: toISO(raw.ngay_tham_dinh), tt_tham_dinh: raw.tt_tham_dinh || "",
+    ngay_bao_cao: toISO(raw.ngay_bao_cao), tt_bao_cao: raw.tt_bao_cao || "",
+    ngay_vmp: toISO(raw.ngay_vmp), tt_vmp: raw.tt_vmp || "",
+  };
+  const [f, setF] = useState(init);
+  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const sel = (k) => <select value={f[k]} onChange={set(k)} style={{ ...INP, cursor: "pointer" }}>{TT_OPTS.map((o) => <option key={o} value={o}>{o || "— Chưa nhập —"}</option>)}</select>;
+  const dt = (k) => <input type="date" value={f[k]} onChange={set(k)} style={INP} />;
+  const stage = (title, dl, dCol, tCol) => (
+    <div style={{ background: "#fff", borderRadius: 14, padding: 14, border: `1.5px solid ${C.pinkSoft}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontWeight: 800, color: C.plum, fontSize: 14 }}>{title}</span>
+        {dl && <Tag color={C.lavText} bg={C.lavSoft}>Deadline: {dl}</Tag>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={FIELD}><span style={LBL}>Ngày hoàn thành thực tế</span>{dt(dCol)}</div>
+        <div style={FIELD}><span style={LBL}>Trạng thái</span>{sel(tCol)}</div>
+      </div>
+    </div>
+  );
+  return (
+    <Modal onClose={onClose} title="Cập nhật tiến độ" icon={Pencil} wide>
+      <div style={{ background: C.lavSoft, borderRadius: 14, padding: "12px 16px", marginBottom: 16 }}>
+        <div style={{ fontWeight: 800, color: C.plum, fontSize: 15 }}>{act.code} · {act.name}</div>
+        <div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 600, marginTop: 3 }}>{act.vtype} · ID: {act.id} · QA: {act.owner}{act.score != null ? ` · Trọng yếu: ${act.score}/9` : ""}{act.effort != null ? ` · ${act.effort} ngày công` : ""}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+        <ROField label="Deadline VMP (T) · gốc" value={toISO(raw.dl_vmp) || act.target} />
+        <div style={FIELD}><span style={LBL}>Lịch thẩm định (bộ phận xếp)</span><input value={f.lich_td} onChange={set("lich_td")} placeholder="dd/mm/yyyy hh:mm" style={INP} /></div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {stage("1. Đề cương", toISO(raw.dl_de_cuong), "ngay_de_cuong", "tt_de_cuong")}
+        {stage("2. Thẩm định thực tế", toISO(raw.dl_tham_dinh), "ngay_tham_dinh", "tt_tham_dinh")}
+        {stage("3. Báo cáo", toISO(raw.dl_bao_cao), "ngay_bao_cao", "tt_bao_cao")}
+        {stage("4. Tổng kết VMP", "", "ngay_vmp", "tt_vmp")}
+      </div>
+      <div style={{ display: "flex", gap: 12, marginTop: 22 }}>
+        <button onClick={onClose} style={{ flex: 1, padding: "12px", borderRadius: 13, border: `1.5px solid ${C.pinkSoft}`, background: "#fff", color: C.plumSoft, fontFamily: TEXT, fontWeight: 800, cursor: "pointer" }}>Hủy</button>
+        <button onClick={() => { onSave(act.id, f); onClose(); }} style={{ ...btnPrimary, flex: 2, padding: "12px", borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Save size={17} /> Lưu & ghi vào Sheet</button>
+      </div>
+    </Modal>
+  );
+}
+function UpdateView({ acts, conn, isAdmin, onUpdate }) {
+  const [q, setQ] = useState("");
+  const [fst, setFst] = useState("all");
+  const [edit, setEdit] = useState(null);
+  const list = acts.filter((a) => {
+    if (fst !== "all" && a.st !== fst) return false;
+    if (!q) return true;
+    const s = (q || "").toLowerCase();
+    return [a.code, a.name, a.owner, a.id, a.vtype].some((x) => String(x || "").toLowerCase().includes(s));
+  });
+  const linked = conn.status === "ok" && conn.writeUrl;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: C.mintSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Pencil size={22} color={C.mintText} /></div>
+            <div>
+              <div style={{ fontFamily: TEXT, fontWeight: 800, fontSize: 17, color: C.plum }}>Nhập tiến độ thực tế</div>
+              <div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 600 }}>Mọi tài khoản đều cập nhật được ngày &amp; trạng thái · ghi thẳng vào Google Sheet</div>
+            </div>
+          </div>
+          <Tag color={linked ? C.mintText : C.marigoldText} bg={linked ? C.mintSoft : C.marigoldSoft}>{linked ? "● Đã nối Sheet (ghi trực tiếp)" : "○ Chưa nối — lưu tạm tại chỗ"}</Tag>
+        </div>
+        <div style={{ marginTop: 14, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
+            <Search size={16} color={C.plumSoft} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm theo mã, tên, QA, ID…" style={{ ...INP, paddingLeft: 36 }} />
+          </div>
+          <select value={fst} onChange={(e) => setFst(e.target.value)} style={{ ...INP, cursor: "pointer", maxWidth: 200 }}>
+            <option value="all">Tất cả trạng thái</option>
+            {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+      </Card>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div className="vmp-scroll" style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: TEXT, minWidth: 720 }}>
+            <thead><tr style={{ background: C.pinkMist }}>
+              {["Mã", "Tên đối tượng", "Loại", "QA", "Deadline VMP", "Trạng thái", ""].map((h, i) => <th key={i} style={{ textAlign: i > 4 ? "center" : "left", padding: "13px 16px", fontSize: 12, fontWeight: 800, color: C.plumSoft, whiteSpace: "nowrap" }}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {list.map((a, i) => (
+                <tr key={a.id} style={{ borderTop: `1px solid ${C.pinkSoft}`, background: i % 2 ? "rgba(255,255,255,.4)" : "transparent" }}>
+                  <td style={{ padding: "12px 16px", fontWeight: 800, color: C.plum, fontSize: 13 }}>{a.code}</td>
+                  <td style={{ padding: "12px 16px", color: C.plum, fontSize: 13 }}>{a.name}</td>
+                  <td style={{ padding: "12px 16px" }}><Tag color={C.lavText} bg={C.lavSoft}>{a.vtype}</Tag></td>
+                  <td style={{ padding: "12px 16px", color: C.plumSoft, fontSize: 13, fontWeight: 600 }}>{a.owner}</td>
+                  <td style={{ padding: "12px 16px", color: C.plumSoft, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{a.target ? a.target.split("-").reverse().join("/") : "—"}</td>
+                  <td style={{ padding: "12px 16px", textAlign: "center" }}><Pill s={a.st} small /></td>
+                  <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                    <button onClick={() => setEdit(a)} style={{ ...btnPrimary, padding: "7px 14px", borderRadius: 10, fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}><Pencil size={13} /> Cập nhật</button>
+                  </td>
+                </tr>
+              ))}
+              {!list.length && <tr><td colSpan={7} style={{ padding: 30, textAlign: "center", color: C.plumSoft, fontWeight: 600 }}>Không có hạng mục phù hợp.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <div style={{ fontSize: 12, color: C.plumSoft, fontWeight: 600, padding: "0 4px", lineHeight: 1.6 }}>
+        Chỉ sửa được <b style={{ color: C.mintText }}>ngày &amp; trạng thái thực tế</b> (tầng Dashboard). Các <b style={{ color: C.lavText }}>Deadline tự tính</b> (T-60 / T-5-BC / T-5) chỉ hiển thị để tham chiếu. Sửa danh mục gốc (mã, tên, phân công…) {isAdmin ? "ở mục Danh mục đối tượng (bạn là admin)." : "cần quyền admin."}
+      </div>
+      {edit && <ProgressEditModal act={edit} onClose={() => setEdit(null)} onSave={onUpdate} />}
+    </div>
+  );
+}
+
+
 function InventoryView({ objects, acts, canEdit, onSave, onDelete, conn }) {
   const [q, setQ] = useState(""); const [cls, setCls] = useState("all"); const [edit, setEdit] = useState(null);
   const filtered = useMemo(() => objects.filter((o) => (o.name + o.code).toLowerCase().includes(q.toLowerCase()) && (cls === "all" || o.cls === cls)), [objects, q, cls]);
@@ -1026,12 +1152,207 @@ function Overview({ acts, setView }) {
 }
 
 /* ===================== App ===================== */
+/* ===================== Workload — Ma trận tải công việc ===================== */
+const WL_MONTHS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
+const WL_QUARTERS = ["Quý 1", "Quý 2", "Quý 3", "Quý 4"];
+// Khi Sheet chưa điền "số ngày công", suy tạm theo phân loại báo cáo (1–5).
+const EFFORT_FALLBACK = { "Độc lập": 1, "Không phụ thuộc": 1, "Hóa lý": 2, "Nhiễm khuẩn": 3, "Vô khuẩn": 5 };
+const effortOf = (a) => { const e = Number(a.effort); return (!isNaN(e) && e > 0) ? e : (EFFORT_FALLBACK[a.dep] != null ? EFFORT_FALLBACK[a.dep] : 2); };
+const scoreOf = (a) => { const s = Number(a.score); if (!isNaN(s) && s > 0) return s; return a.crit === "Cao" ? 8 : a.crit === "TB" ? 5 : 2; };
+const monthOf = (a) => { if (!a.target) return -1; const m = Number(String(a.target).split("-")[1]); return (m >= 1 && m <= 12) ? m - 1 : -1; };
+
+function WorkloadView({ acts }) {
+  const [scope, setScope] = useState("month");
+  const CAP_MONTH = 10; // ⚙️ Ngày công/tháng coi là "đầy tải" — chỉnh con số này cho khớp năng lực thực tế của đội.
+
+  const people = useMemo(() => {
+    const map = {};
+    acts.forEach((a) => {
+      const mi = monthOf(a); if (mi < 0) return;
+      const owner = a.owner || "—";
+      if (!map[owner]) map[owner] = { name: owner, months: Array.from({ length: 12 }, () => ({ eff: 0, tasks: [] })), total: 0, count: 0, over: 0, crit: { Cao: 0, TB: 0, "Thấp": 0 }, vtypes: {} };
+      const o = map[owner], e = effortOf(a);
+      o.months[mi].eff += e; o.months[mi].tasks.push(a);
+      o.total += e; o.count++;
+      if (a.st === "over") o.over++;
+      o.crit[a.crit] = (o.crit[a.crit] || 0) + 1;
+      o.vtypes[a.vtype] = (o.vtypes[a.vtype] || 0) + 1;
+    });
+    return Object.values(map).sort((x, y) => y.total - x.total);
+  }, [acts]);
+
+  const cols = scope === "month" ? WL_MONTHS : scope === "quarter" ? WL_QUARTERS : ["Cả năm"];
+  const capCol = scope === "month" ? CAP_MONTH : scope === "quarter" ? CAP_MONTH * 3 : CAP_MONTH * 12;
+  const effIn = (p, ci) => scope === "month" ? p.months[ci].eff : scope === "quarter" ? sum(p.months.slice(ci * 3, ci * 3 + 3).map((m) => m.eff)) : p.total;
+  const tasksIn = (p, ci) => scope === "month" ? p.months[ci].tasks : scope === "quarter" ? p.months.slice(ci * 3, ci * 3 + 3).flatMap((m) => m.tasks) : p.months.flatMap((m) => m.tasks);
+  const peakOf = (p) => { let mx = 0, mi = -1; p.months.forEach((m, i) => { if (m.eff > mx) { mx = m.eff; mi = i; } }); return { eff: mx, mi }; };
+
+  const cellStyle = (eff, cap) => {
+    const ratio = cap > 0 ? eff / cap : 0;
+    let color, text;
+    if (ratio > 1) { color = C.rasp; text = C.raspText; }
+    else if (ratio >= 0.85) { color = C.marigold; text = C.marigoldText; }
+    else if (ratio >= 0.5) { color = C.sky; text = C.skyText; }
+    else { color = C.mint; text = C.mintText; }
+    const a = Math.round(clamp(0.18 + ratio * 0.55, 0.18, 0.88) * 255).toString(16).padStart(2, "0");
+    return { bg: color + a, text };
+  };
+
+  const allTasks = acts.filter((a) => monthOf(a) >= 0);
+  const critCount = { Cao: 0, TB: 0, "Thấp": 0 }; allTasks.forEach((a) => { critCount[a.crit] = (critCount[a.crit] || 0) + 1; });
+  const vtypeCount = {}; allTasks.forEach((a) => { vtypeCount[a.vtype] = (vtypeCount[a.vtype] || 0) + 1; });
+  const totalEffort = sum(allTasks.map(effortOf));
+  const overloadedCount = people.filter((p) => peakOf(p).eff > CAP_MONTH).length;
+
+  const focus = allTasks.filter((a) => a.st !== "done" && (a.crit === "Cao" || scoreOf(a) >= 7))
+    .map((a) => ({ a, sc: scoreOf(a) }))
+    .sort((x, y) => y.sc - x.sc || (parseD(x.a.target) - parseD(y.a.target))).slice(0, 8);
+
+  const ScopeBtn = ({ id, label }) => <button onClick={() => setScope(id)} style={{ padding: "9px 16px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: TEXT, fontSize: 13, fontWeight: 800, background: scope === id ? GRAD : C.pinkSoft, color: scope === id ? "#fff" : C.plumSoft }}>{label}</button>;
+
+  const mood = overloadedCount > 0 ? "stressed" : "happy";
+  const bubble = overloadedCount > 0
+    ? `Có ${overloadedCount} bạn đang quá tải đó nha! Xem ma trận rồi mình san bớt việc cho người đang rảnh nhé 💪`
+    : `Cả đội đang khá cân đối! Giữ nhịp này là về đích VMP êm ru thôi ✨`;
+  const legend = [["Thong thả", C.mint], ["Vừa tải", C.sky], ["Sắp đầy", C.marigold], ["Quá tải", C.rasp]];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* Hero */}
+      <Card variant="strong" style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", background: `linear-gradient(120deg,#fff,${C.pinkMist})` }}>
+        <div style={{ flexShrink: 0 }}><Mascot mood={mood} size={104} /></div>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div className="pop" key={mood} style={{ background: "#fff", border: `1.5px solid ${C.pinkSoft}`, borderRadius: 18, padding: "13px 17px", fontFamily: TEXT, fontSize: 14.5, color: C.plum, fontWeight: 700, lineHeight: 1.5, boxShadow: "0 4px 14px rgba(238,123,169,.10)" }}>{bubble}</div>
+          <div style={{ fontSize: 12.5, color: C.plumSoft, marginTop: 9, fontWeight: 700 }}>Tổng <b style={{ color: C.pinkText }}>{allTasks.length} hạng mục</b> · <b style={{ color: C.lavText }}>{totalEffort} ngày công</b> · <b style={{ color: C.mintText }}>{people.length} người</b> phụ trách · ngưỡng đầy tải <b style={{ color: C.marigoldText }}>{CAP_MONTH} ngày công/tháng</b></div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignSelf: "flex-start" }}><ScopeBtn id="month" label="Tháng" /><ScopeBtn id="quarter" label="Quý" /><ScopeBtn id="year" label="Năm" /></div>
+      </Card>
+
+      {/* Capacity cards */}
+      <Card variant="strong">
+        <CardTitle icon={Activity} sub="Thanh năng lượng = tháng bận nhất so với ngưỡng đầy tải — đỏ là đang quá tải, cần san sẻ việc">Sức tải từng người</CardTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(248px,1fr))", gap: 14 }}>
+          {people.map((p) => {
+            const pk = peakOf(p); const ratio = CAP_MONTH > 0 ? pk.eff / CAP_MONTH : 0;
+            const band = ratio > 1 ? { l: "Quá tải", c: C.rasp, t: C.raspText, bg: C.raspSoft, e: "😵" } : ratio >= 0.6 ? { l: "Khá bận", c: C.marigold, t: C.marigoldText, bg: C.marigoldSoft, e: "🔥" } : { l: "Thong thả", c: C.mint, t: C.mintText, bg: C.mintSoft, e: "🌿" };
+            return (
+              <div key={p.name} className="rise" style={{ background: "#fff", border: `1.5px solid ${C.pinkSoft}`, borderRadius: 18, padding: 15 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 11 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 999, background: GRAD, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontFamily: NUM, fontSize: 17, flexShrink: 0 }}>{p.name[0]}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: TEXT, fontWeight: 800, fontSize: 15, color: C.plum }}>{p.name}</div><div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 700 }}>{p.count} việc · {p.total} ngày công</div></div>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: band.t, background: band.bg, padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>{band.e} {band.l}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, fontWeight: 700, color: C.plumSoft, marginBottom: 4 }}>
+                  <span>Bận nhất: {pk.mi >= 0 ? WL_MONTHS[pk.mi] : "—"}</span>
+                  <span style={{ color: band.t }}>{pk.eff}/{CAP_MONTH} · {Math.round(ratio * 100)}%</span>
+                </div>
+                <div style={{ height: 9, borderRadius: 999, background: C.pinkSoft, overflow: "hidden" }}><div style={{ height: "100%", width: clamp(ratio, 0, 1) * 100 + "%", background: band.c, borderRadius: 999, transition: "width .9s ease" }} /></div>
+                <div style={{ display: "flex", gap: 6, marginTop: 11, flexWrap: "wrap" }}>
+                  {p.crit.Cao > 0 && <Tag color={C.raspText} bg={C.raspSoft}>{p.crit.Cao} trọng yếu cao</Tag>}
+                  {p.over > 0 && <Tag color={C.marigoldText} bg={C.marigoldSoft}>{p.over} quá hạn</Tag>}
+                  {p.crit.Cao === 0 && p.over === 0 && <Tag color={C.mintText} bg={C.mintSoft}>ổn định</Tag>}
+                </div>
+              </div>
+            );
+          })}
+          {people.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 28, color: C.plumSoft, fontWeight: 600 }}>Chưa có dữ liệu hạng mục có ngày đích.</div>}
+        </div>
+      </Card>
+
+      {/* Heatmap matrix */}
+      <Card variant="strong">
+        <CardTitle icon={BarChart3} right={<div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{legend.map(([l, c]) => <span key={l} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.plum, fontWeight: 700 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: c }} />{l}</span>)}</div>} sub="Mỗi ô = số ngày công đến hạn trong kỳ · màu càng đậm/đỏ càng nặng tải · di chuột vào ô để xem hạng mục">Ma trận tải · Người × {scope === "month" ? "Tháng" : scope === "quarter" ? "Quý" : "Năm"}</CardTitle>
+        <div style={{ overflowX: "auto" }} className="vmp-scroll">
+          <table style={{ borderCollapse: "separate", borderSpacing: 5, minWidth: scope === "month" ? 860 : 420 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", fontSize: 11, color: C.plumSoft, fontWeight: 800, padding: "0 8px 8px", position: "sticky", left: 0, background: "#fff" }}>NGƯỜI</th>
+                {cols.map((c, ci) => { const isNow = scope === "month" && ci === 5; return <th key={c} style={{ fontSize: 11, fontWeight: 800, color: isNow ? C.pinkText : C.plumSoft, padding: "0 4px 8px", minWidth: 52 }}>{c}{isNow ? " •" : ""}</th>; })}
+                <th style={{ fontSize: 11, fontWeight: 800, color: C.plum, padding: "0 6px 8px" }}>TỔNG</th>
+              </tr>
+            </thead>
+            <tbody>
+              {people.map((p) => (
+                <tr key={p.name}>
+                  <td style={{ padding: "4px 8px", position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 26, height: 26, borderRadius: 999, background: GRAD, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontFamily: NUM, fontSize: 12, flexShrink: 0 }}>{p.name[0]}</div><span style={{ fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.plum, whiteSpace: "nowrap" }}>{p.name}</span></div>
+                  </td>
+                  {cols.map((c, ci) => {
+                    const eff = effIn(p, ci); const tasks = tasksIn(p, ci);
+                    if (eff <= 0) return <td key={ci} style={{ textAlign: "center" }}><div style={{ height: 40, borderRadius: 10, background: C.pinkMist }} /></td>;
+                    const st = cellStyle(eff, capCol);
+                    const tip = tasks.map((t) => `${t.code} · ${t.vtype} (${effortOf(t)} nc)`).join("\n");
+                    return <td key={ci} style={{ textAlign: "center" }} title={tip}>
+                      <div style={{ height: 40, borderRadius: 10, background: st.bg, border: `1px solid ${st.text}33`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "default" }}>
+                        <span style={{ fontFamily: NUM, fontWeight: 800, fontSize: 15, color: st.text, lineHeight: 1 }}>{eff}</span>
+                        <span style={{ fontSize: 8.5, color: st.text, fontWeight: 700, opacity: .85 }}>{tasks.length} việc</span>
+                      </div>
+                    </td>;
+                  })}
+                  <td style={{ textAlign: "center" }}>
+                    <div style={{ height: 40, borderRadius: 10, background: peakOf(p).eff > CAP_MONTH ? C.raspSoft : C.lavSoft, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontFamily: NUM, fontWeight: 800, fontSize: 15, color: peakOf(p).eff > CAP_MONTH ? C.raspText : C.lavText, lineHeight: 1 }}>{p.total}</span>
+                      <span style={{ fontSize: 8.5, color: C.plumSoft, fontWeight: 700 }}>nc</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {people.length > 0 && <tr>
+                <td style={{ padding: "6px 8px", position: "sticky", left: 0, background: "#fff", fontSize: 11, fontWeight: 800, color: C.plumSoft }}>TỔNG/KỲ</td>
+                {cols.map((c, ci) => { const tot = sum(people.map((p) => effIn(p, ci))); const hot = tot > capCol * Math.max(people.length, 1) * 0.5; return <td key={ci} style={{ textAlign: "center", fontFamily: NUM, fontWeight: 800, fontSize: 13, color: hot ? C.raspText : C.plum }}>{tot || ""}</td>; })}
+                <td style={{ textAlign: "center", fontFamily: NUM, fontWeight: 800, fontSize: 13, color: C.plum }}>{sum(people.map((p) => p.total))}</td>
+              </tr>}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: C.plumSoft, fontWeight: 600, lineHeight: 1.6 }}>"nc" = ngày công (lấy từ cột "số ngày công" trên Sheet; nếu trống sẽ suy theo phân loại báo cáo: Vô khuẩn 5 · Nhiễm khuẩn 3 · Hóa lý 2 · Độc lập 1). Cột <b style={{ color: C.pinkText }}>T6 •</b> là tháng hiện tại.</div>
+      </Card>
+
+      {/* Distribution + Focus */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 24 }}>
+        <Card variant="soft">
+          <CardTitle icon={ShieldAlert} sub="Bao nhiêu hạng mục theo từng mức trọng yếu & từng loại thẩm định">Phân bố trọng yếu & loại thẩm định</CardTitle>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 16 }}>
+            <Donut size={132} segments={[{ value: critCount.Cao, color: C.rasp }, { value: critCount.TB, color: C.marigold }, { value: critCount["Thấp"], color: C.mint }]} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+              {[["Cao", C.rasp, C.raspText], ["TB", C.marigold, C.marigoldText], ["Thấp", C.mint, C.mintText]].map(([k, c, t]) => <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.plum }}><span style={{ width: 11, height: 11, borderRadius: 999, background: c }} />Trọng yếu {k}</span><span style={{ fontFamily: NUM, fontWeight: 800, fontSize: 16, color: t }}>{critCount[k] || 0}</span></div>)}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+            {Object.entries(vtypeCount).sort((a, b) => b[1] - a[1]).map(([v, n]) => <span key={v} style={{ fontSize: 12, fontWeight: 800, color: C.lavText, background: C.lavSoft, padding: "5px 11px", borderRadius: 999, fontFamily: TEXT }}>{v} <b style={{ fontFamily: NUM }}>{n}</b></span>)}
+            {Object.keys(vtypeCount).length === 0 && <span style={{ fontSize: 12, color: C.plumSoft, fontWeight: 600 }}>Chưa có dữ liệu.</span>}
+          </div>
+        </Card>
+
+        <Card variant="strong">
+          <CardTitle icon={Flag} sub="Trọng yếu cao / điểm ≥ 7 và chưa hoàn thành — ưu tiên làm trước">Cần tập trung</CardTitle>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {focus.map(({ a, sc }) => <div key={a.id} className="vmp-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 13, background: "#fff", border: `1px solid ${C.raspSoft}` }}>
+              <span style={{ fontFamily: NUM, fontWeight: 800, fontSize: 13, color: "#fff", background: sc >= 7 ? C.raspText : C.marigoldText, width: 30, height: 30, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{sc}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><Tag color={C.lavText} bg={C.lavSoft}>{a.vtype}</Tag><span style={{ fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.plum, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span></div>
+                <div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 600, marginTop: 1 }}>{a.owner} · {a.code} · đích {a.target ? fmtVN(parseD(a.target)) : "—"}</div>
+              </div>
+              <Pill s={a.st} small />
+            </div>)}
+            {focus.length === 0 && <div style={{ textAlign: "center", padding: 22, color: C.mintText, fontWeight: 700 }}>Không còn hạng mục trọng yếu cao tồn đọng 🎉</div>}
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ textAlign: "center", padding: "4px 0", fontFamily: TEXT, fontSize: 12, color: C.plumSoft, fontWeight: 700 }}>✨ Mục tiêu: chia đầu việc đều tay, không ai quá tải — về đích VMP cùng nhau ✨</div>
+    </div>
+  );
+}
+
 const SUBS = {
   overview: "Theo dõi Kế hoạch Thẩm định Gốc (VMP) — CPC1 HN",
   timeline: "Lịch tổng thể & các mốc: Đề cương → Thẩm định → Báo cáo → Đích VMP",
   inventory: "Danh mục đối tượng theo 5 nhóm — đồng bộ Google Sheet",
+  update: "Nhập kết quả thực tế (ngày & trạng thái) — ghi thẳng vào Google Sheet qua n8n",
   alerts: "Cảnh báo tới hạn / quá hạn & dự báo tái thẩm định theo tần suất",
   risk: "Quản lý rủi ro chất lượng (ICH Q9) — ưu tiên theo mức ảnh hưởng GxP",
+  workload: "Ma trận tải công việc Người × Tháng — tránh quá tải & phân bổ đầu việc hợp lý",
   reports: "Báo cáo tuần / tháng / quý + nhận xét AI · xuất PDF / DOC / HTML",
   connect: "Kết nối & đồng bộ dữ liệu 2 chiều với Google Sheet",
 };
@@ -1106,6 +1427,27 @@ export default function App() {
   };
   const resetDemo = () => { setObjects(SEED_OBJ); setActs(SEED_ACT); clearConn(); setConn({ readUrl: "", writeUrl: "", status: "demo", msg: "Đã khôi phục dữ liệu demo." }); };
 
+  // DASHBOARD tier — cập nhật ngày & trạng thái thực tế 1 hạng mục (mọi tài
+  // khoản đều được phép). Gửi ĐỦ 9 trường (đã điền sẵn giá trị hiện có) để
+  // n8n không ghi rỗng đè lên các ô chưa sửa.
+  const updateActivity = async (id, patch) => {
+    setActs((prev) => prev.map((a) => {
+      if (a.id !== id) return a;
+      const raw = { ...(a._raw || {}), ...patch };
+      return { ...a, _raw: raw, ...deriveActivityFields(raw) };
+    }));
+    if (conn.writeUrl) {
+      try {
+        const r = await postToN8n(conn.writeUrl, buildUpdateRow(id, patch, user ? user.name : ""));
+        const j = await r.json().catch(() => null);
+        const ok = r.ok && (!j || j.ok !== false);
+        setConn((c) => ({ ...c, msg: ok ? `Đã ghi tiến độ '${id}' lên Google Sheet (HTTP ${r.status}) ✓` : `Gửi '${id}' nhưng n8n báo lỗi (HTTP ${r.status})` }));
+      } catch (e) { setConn((c) => ({ ...c, msg: "Lỗi ghi tiến độ: " + (e && e.message ? e.message : "không rõ") })); }
+    } else {
+      setConn((c) => ({ ...c, msg: `Đã cập nhật '${id}' tại chỗ (chưa cấu hình URL ghi để đồng bộ Sheet).` }));
+    }
+  };
+
   const styleTag = (
     <style>{`
       *{box-sizing:border-box;}
@@ -1140,7 +1482,11 @@ export default function App() {
 
   if (!user) return (<>{styleTag}<LoginScreen users={users} onLogin={setUser} /></>);
   const title = NAV.find((n) => n.id === view)?.label || "Tổng quan";
-  const canEdit = user.perm !== "view";
+  // PHÂN QUYỀN 3 TẦNG:
+  //  • Mục GỐC (danh mục/định danh)  → chỉ admin được sửa
+  //  • Mục DASHBOARD (nhập tiến độ)   → mọi tài khoản đăng nhập đều sửa được
+  //  • Mục TỰ NHẢY (deadline tự tính) → chỉ đọc (công thức), không ai sửa tay
+  const isAdmin = user.perm === "admin";
   const stars = [{ t: "10%", l: "30%", s: 14, c: C.gold, d: "0s" }, { t: "24%", l: "92%", s: 12, c: C.pink, d: ".8s" }, { t: "55%", l: "96%", s: 16, c: C.lav, d: "1.4s" }, { t: "82%", l: "34%", s: 12, c: C.sky, d: ".5s" }, { t: "68%", l: "8%", s: 13, c: C.pink, d: "1.1s" }];
 
   return (
@@ -1155,9 +1501,11 @@ export default function App() {
           <div style={{ padding: "0 34px 38px" }}>
             {view === "overview" && <Overview acts={enriched} setView={setView} />}
             {view === "timeline" && <TimelineView acts={enriched} />}
-            {view === "inventory" && <InventoryView objects={objects} acts={enriched} canEdit={canEdit} onSave={saveObject} onDelete={deleteObject} conn={conn} />}
+            {view === "inventory" && <InventoryView objects={objects} acts={enriched} canEdit={isAdmin} onSave={saveObject} onDelete={deleteObject} conn={conn} />}
+            {view === "update" && <UpdateView acts={enriched} conn={conn} isAdmin={isAdmin} onUpdate={updateActivity} />}
             {view === "alerts" && <AlertsView acts={enriched} />}
             {view === "risk" && <QrmView acts={enriched} />}
+            {view === "workload" && <WorkloadView acts={enriched} />}
             {view === "reports" && <ReportsView acts={enriched} />}
             {view === "connect" && <ConnectView conn={conn} onConnect={connectSheet} onTestWrite={testWrite} onReset={resetDemo} />}
           </div>
