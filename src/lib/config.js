@@ -8,8 +8,8 @@
  * ===================================================================== */
 
 // Biến môi trường Vite — phải có tiền tố VITE_ mới lộ ra phía client.
-export const ENV_READ_URL = import.meta.env.VITE_VMP_READ_URL || "";
-export const ENV_WRITE_URL = import.meta.env.VITE_VMP_WRITE_URL || "";
+export const ENV_READ_URL = import.meta.env.VITE_VMP_READ_URL || "https://n8n.cpc1hn.com/webhook/vmp-read";
+export const ENV_WRITE_URL = import.meta.env.VITE_VMP_WRITE_URL || "https://n8n.cpc1hn.com/webhook/vmp-write";
 
 const LS_KEY = "vmp_monitor_conn_v1";
 const LS_USER = "vmp_monitor_user_v1";
