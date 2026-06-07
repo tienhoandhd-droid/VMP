@@ -74,6 +74,15 @@ const DEP_DAYS = { "Độc lập": 2, "Hóa lý": 2, "Nhiễm khuẩn": 7, "Vô 
 // ===== Dữ liệu demo đã được GỠ BỎ — ứng dụng chỉ dùng dữ liệu thật từ Google Sheet (qua n8n). =====
 const SEED_OBJ = [];
 const SEED_ACT = [];
+// Tài khoản đăng nhập (mật khẩu demo — hãy đổi qua chức năng "Đổi mật khẩu").
+const USERS = {
+  admin: { pass: "admin@123", name: "Quản trị hệ thống", role: "Admin", perm: "admin" },
+  hoan: { pass: "hoan@123", name: "Hoàn", role: "V/Q Team — QLCL", perm: "admin" },
+  my: { pass: "my@123", name: "My", role: "V/Q Team — QLCL", perm: "admin" },
+  nhi: { pass: "nhi@123", name: "Nhi", role: "V/Q Team — QLCL", perm: "admin" },
+  bophan: { pass: "bp@123", name: "NV Bộ phận", role: "XSX / Kho / RD / Cơ điện", perm: "edit" },
+};
+const PERM_LABEL = { admin: "Quản trị", edit: "Chỉnh sửa", view: "Chỉ xem" };
 const PROG = { done: 100, prog: 55, over: 75, todo: 20, plan: 8 };
 
 function milestones(act) {
