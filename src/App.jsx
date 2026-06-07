@@ -71,72 +71,9 @@ const DEPT_COLOR = { sx: C.pink, cd: C.sky, kho: C.marigold, qc: C.mint, qa: C.l
 const DEPT_CODE = { sx: "SX", cd: "CĐ", kho: "Kho", qc: "QC", qa: "QA" };
 const DEP_DAYS = { "Độc lập": 2, "Hóa lý": 2, "Nhiễm khuẩn": 7, "Vô khuẩn": 16 };
 
-const SEED_OBJ = [
-  { code: "PCTB501", name: "LAF cân", cls: "tb", dept: "sx", area: "C1", line: "BFS", grade: "B", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "Cấp khí sạch bảo vệ khu vực cân — thẩm định tốc độ gió, chênh áp, đếm tiểu phân." },
-  { code: "PCTB503", name: "Tủ truyền NL vào phòng pha chế (Passbox)", cls: "tb", dept: "sx", area: "C1", line: "BFS", grade: "B", gxp: "GxP", crit: "Cao", freq: 12, need: true, reason: "Passbox kiểm soát áp suất & interlock chống nhiễm chéo." },
-  { code: "PCTB504", name: "Tủ hấp tiệt trùng dụng cụ 2 cửa", cls: "tb", dept: "sx", area: "C1", line: "BFS", grade: "D/B", gxp: "GxP", crit: "Cao", freq: 12, need: true, reason: "Tiệt trùng nhiệt ẩm — bắt buộc phân bố/xâm nhập nhiệt (heat mapping)." },
-  { code: "PCTB505", name: "Tank pha chế 700L", cls: "tb", dept: "sx", area: "C1", line: "BFS", grade: "B", gxp: "GxP", crit: "Cao", freq: 12, need: true, reason: "Tiếp xúc trực tiếp sản phẩm, khuấy/gia nhiệt — kèm thẩm định vệ sinh." },
-  { code: "PCTB507", name: "Tank pha 1000L", cls: "tb", dept: "sx", area: "C1", line: "BFS", grade: "B", gxp: "GxP", crit: "Cao", freq: 12, need: true, reason: "Thiết bị sản xuất chính — IQ/OQ/PQ kết hợp thẩm định vệ sinh." },
-  { code: "PCTB502", name: "Cân kỹ thuật điện (2 số)", cls: "tb", dept: "sx", area: "C1", line: "BFS", grade: "B", gxp: "GxP", crit: "Thấp", freq: 0, need: false, reason: "Thiết bị đo độc lập — chỉ hiệu chuẩn & daily check." },
-  { code: "X4-QT-001", name: "Quy trình vệ sinh sản phẩm A", cls: "qt", dept: "sx", area: "All", line: "—", grade: "—", gxp: "GxP", crit: "Cao", freq: 12, need: true, reason: "Cleaning validation — MAC/HBEL, dư lượng & vi sinh." },
-  { code: "X4-QT-002", name: "Quy trình sản xuất sản phẩm A", cls: "qt", dept: "sx", area: "All", line: "—", grade: "—", gxp: "GxP", crit: "Cao", freq: 12, need: true, reason: "Process validation — 3 lô liên tiếp, thông số tới hạn (CPP/CQA)." },
-  { code: "X4-QT-003", name: "SOP thay trang phục & vệ sinh cá nhân", cls: "qt", dept: "qa", area: "All", line: "—", grade: "—", gxp: "GxP", crit: "TB", freq: 12, need: true, reason: "Đánh giá tuân thủ thao tác — gowning qualification." },
-  { code: "S1.01", name: "Kho thành phẩm thường", cls: "kho", dept: "kho", area: "S1", line: "—", grade: "—", gxp: "GxP", crit: "TB", freq: 6, need: true, reason: "Lập bản đồ nhiệt độ/độ ẩm (temperature mapping)." },
-  { code: "S1.02", name: "Kho lạnh thành phẩm", cls: "kho", dept: "kho", area: "S1", line: "—", grade: "—", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "Chuỗi lạnh 2–8°C — mapping + đánh giá mất điện." },
-  { code: "S2.01", name: "Kho nguyên liệu thường", cls: "kho", dept: "kho", area: "S2", line: "—", grade: "—", gxp: "GxP", crit: "TB", freq: 6, need: true, reason: "Temperature mapping kho nguyên liệu." },
-  { code: "S4.01", name: "Kho lạnh hóa dược", cls: "kho", dept: "kho", area: "S4", line: "—", grade: "—", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "Chuỗi lạnh hóa dược — mapping định kỳ." },
-  { code: "S4.02", name: "Kho lạnh sinh phẩm", cls: "kho", dept: "kho", area: "S4", line: "—", grade: "—", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "Sinh phẩm nhạy nhiệt — mapping & cảnh báo nghiêm ngặt." },
-  { code: "HT-01", name: "HVAC khu vực BFS", cls: "ht", dept: "cd", area: "C1", line: "—", grade: "B", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "Tái thẩm định HVAC — chênh áp, ACH, phục hồi, tiểu phân." },
-  { code: "HT-02", name: "HVAC khu vực FFS", cls: "ht", dept: "cd", area: "C2", line: "—", grade: "C", gxp: "GxP", crit: "TB", freq: 12, need: true, reason: "Tái thẩm định HVAC định kỳ." },
-  { code: "HT-04", name: "HVAC khu vực SB-SR", cls: "ht", dept: "cd", area: "C4", line: "—", grade: "B", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "HVAC vùng vô trùng — chênh áp & tiểu phân Grade A/B." },
-  { code: "HT-11", name: "HVAC khu vực QC vi sinh", cls: "ht", dept: "cd", area: "Q2", line: "—", grade: "B", gxp: "GxP", crit: "Cao", freq: 6, need: true, reason: "HVAC phòng vi sinh — kiểm soát nhiễm khuẩn." },
-  { code: "VC-01", name: "Vận chuyển lạnh nội bộ (mẫu)", cls: "vc", dept: "qa", area: "—", line: "—", grade: "—", gxp: "GxP", crit: "TB", freq: 12, need: true, reason: "Transport validation — duy trì nhiệt độ trong vận chuyển." },
-];
-
-const SEED_ACT = [
-  { id: "PCTB501/26.01-OQ", code: "PCTB501", vtype: "OQ", dep: "Nhiễm khuẩn", owner: "Nhi", target: "2026-02-15", st: "done", docDone: true },
-  { id: "PCTB501/26.02-PQ", code: "PCTB501", vtype: "PQ", dep: "Nhiễm khuẩn", owner: "Nhi", target: "2026-08-15", st: "todo" },
-  { id: "PCTB503/26.01-OQ", code: "PCTB503", vtype: "OQ", dep: "Nhiễm khuẩn", owner: "Minh", target: "2026-03-10", st: "done", docDone: true },
-  { id: "PCTB504/26.01-OQ", code: "PCTB504", vtype: "OQ", dep: "Vô khuẩn", owner: "Nhi", target: "2026-04-05", st: "done", docDone: false },
-  { id: "PCTB504/26.01-PQ", code: "PCTB504", vtype: "PQ", dep: "Vô khuẩn", owner: "Nhi", target: "2026-06-20", st: "prog" },
-  { id: "PCTB505/26.01-IQ", code: "PCTB505", vtype: "IQ", dep: "Hóa lý", owner: "Minh", target: "2026-01-20", st: "done", docDone: true },
-  { id: "PCTB505/26.01-OQ", code: "PCTB505", vtype: "OQ", dep: "Hóa lý", owner: "Minh", target: "2026-05-25", st: "over" },
-  { id: "PCTB505/26.01-VS", code: "PCTB505", vtype: "VS", dep: "Hóa lý", owner: "Lan", target: "2026-09-10", st: "plan" },
-  { id: "PCTB507/26.01-OQ", code: "PCTB507", vtype: "OQ", dep: "Hóa lý", owner: "Minh", target: "2026-07-05", st: "prog" },
-  { id: "PCTB507/26.01-PQ", code: "PCTB507", vtype: "PQ", dep: "Hóa lý", owner: "Minh", target: "2026-11-15", st: "plan" },
-  { id: "X4-QT-001/26.01-VS", code: "X4-QT-001", vtype: "VS", dep: "Hóa lý", owner: "Lan", target: "2026-06-30", st: "prog" },
-  { id: "X4-QT-002/26.01-PV", code: "X4-QT-002", vtype: "PV", dep: "Hóa lý", owner: "Lan", target: "2026-10-20", st: "plan" },
-  { id: "X4-QT-003/26.01-ĐG", code: "X4-QT-003", vtype: "PV", dep: "Độc lập", owner: "Hoàn", target: "2026-05-15", st: "done", docDone: true },
-  { id: "S1.01/26.01-BĐ", code: "S1.01", vtype: "BĐ", dep: "Độc lập", owner: "Tú", target: "2026-02-28", st: "done", docDone: true },
-  { id: "S1.02/26.01-BĐ", code: "S1.02", vtype: "BĐ", dep: "Độc lập", owner: "Tú", target: "2026-05-30", st: "over" },
-  { id: "S2.01/26.01-BĐ", code: "S2.01", vtype: "BĐ", dep: "Độc lập", owner: "Tú", target: "2026-08-25", st: "todo" },
-  { id: "S4.01/26.01-BĐ", code: "S4.01", vtype: "BĐ", dep: "Độc lập", owner: "Tú", target: "2026-07-20", st: "todo" },
-  { id: "S4.02/26.01-BĐ", code: "S4.02", vtype: "BĐ", dep: "Nhiễm khuẩn", owner: "Tú", target: "2026-06-18", st: "prog" },
-  { id: "HT-01/26.01-PQ", code: "HT-01", vtype: "PQ", dep: "Nhiễm khuẩn", owner: "Minh", target: "2026-03-25", st: "done", docDone: true },
-  { id: "HT-01/26.02-PQ", code: "HT-01", vtype: "PQ", dep: "Nhiễm khuẩn", owner: "Minh", target: "2026-09-25", st: "todo" },
-  { id: "HT-04/26.01-PQ", code: "HT-04", vtype: "PQ", dep: "Nhiễm khuẩn", owner: "Minh", target: "2026-06-10", st: "prog" },
-  { id: "HT-11/26.01-PQ", code: "HT-11", vtype: "PQ", dep: "Nhiễm khuẩn", owner: "Minh", target: "2026-05-20", st: "over" },
-  { id: "HT-02/26.01-PQ", code: "HT-02", vtype: "PQ", dep: "Nhiễm khuẩn", owner: "Minh", target: "2026-12-05", st: "plan" },
-  { id: "VC-01/26.01-VC", code: "VC-01", vtype: "VC", dep: "Độc lập", owner: "Hoàn", target: "2026-10-30", st: "plan" },
-];
-
-const USERS = {
-  admin: { pass: "admin@123", name: "Quản trị hệ thống", role: "Admin", perm: "admin" },
-  hoan: { pass: "hoan@123", name: "Hoàn", role: "V/Q Team — QLCL", perm: "admin" },
-  my: { pass: "my@123", name: "My", role: "V/Q Team — QLCL", perm: "admin" },
-  nhi: { pass: "nhi@123", name: "Nhi", role: "V/Q Team — QLCL", perm: "admin" },
-  bophan: { pass: "bp@123", name: "NV Bộ phận", role: "XSX / Kho / RD / Cơ điện", perm: "edit" },
-};
-const PERM_LABEL = { admin: "Quản trị", edit: "Chỉnh sửa", view: "Chỉ xem" };
-
-/* ===================== Helpers ===================== */
-const parseD = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
-const addDays = (date, n) => { const x = new Date(date); x.setDate(x.getDate() + n); return x; };
-const addMonths = (date, n) => { const x = new Date(date); x.setMonth(x.getMonth() + n); return x; };
-const fmtVN = (date) => `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
-const daysBetween = (a, b) => Math.round((a - b) / 86400000);
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const pctYear = (date) => clamp(((date - YS) / (YE - YS)) * 100, 0, 100);
+// ===== Dữ liệu demo đã được GỠ BỎ — ứng dụng chỉ dùng dữ liệu thật từ Google Sheet (qua n8n). =====
+const SEED_OBJ = [];
+const SEED_ACT = [];
 const PROG = { done: 100, prog: 55, over: 75, todo: 20, plan: 8 };
 
 function milestones(act) {
@@ -368,7 +305,7 @@ function Sidebar({ view, setView, user, onLogout, onChangePw, connected }) {
     </aside>
   );
 }
-function Topbar({ title, user, sub }) {
+function Topbar({ title, user, sub, onRefresh, refreshing }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   return (
@@ -379,7 +316,7 @@ function Topbar({ title, user, sub }) {
         <div style={{ fontSize: 13, color: C.plumSoft, marginTop: 3, fontWeight: 600 }}>{sub || "Theo dõi Kế hoạch Thẩm định Gốc (VMP) — CPC1 HN"}</div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ ...glass, borderRadius: 16, padding: "9px 15px", display: "flex", alignItems: "center", gap: 9 }}><span style={{ position: "relative", display: "flex", width: 8, height: 8 }}><span className="live-dot" style={{ position: "absolute", inset: 0, borderRadius: 999, background: C.mint }} /><span style={{ position: "relative", width: 8, height: 8, borderRadius: 999, background: C.mint }} /></span><span style={{ fontSize: 11, fontWeight: 800, color: C.mintText, letterSpacing: 0.5 }}>TRỰC TIẾP</span><span style={{ fontFamily: NUM, fontSize: 13, color: C.plum, fontWeight: 700 }}>{now.toLocaleTimeString("vi-VN")}</span></div>
+        <button onClick={onRefresh} title="Làm mới dữ liệu từ Google Sheet" style={{ ...glass, borderRadius: 16, padding: "9px 15px", display: "flex", alignItems: "center", gap: 8, border: "none", cursor: "pointer", color: C.pinkText, fontFamily: TEXT, fontWeight: 800, fontSize: 12.5 }}><RefreshCw size={15} color={C.pink} className={refreshing ? "spin" : ""} /> {refreshing ? "Đang tải…" : "Làm mới"}</button>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, fontSize: 12.5, fontWeight: 800, color: user.perm === "view" ? C.skyText : C.pinkText, background: user.perm === "view" ? C.skySoft : C.pinkSoft }}><ShieldCheck size={14} /> {PERM_LABEL[user.perm]}</span>
         <button style={{ position: "relative", width: 42, height: 42, borderRadius: 999, border: "none", cursor: "pointer", ...glass, display: "flex", alignItems: "center", justifyContent: "center" }}><Bell size={18} color={C.pink} /><span style={{ position: "absolute", top: 9, right: 10, width: 8, height: 8, borderRadius: 999, background: C.rasp, border: "2px solid #fff" }} /></button>
       </div>
@@ -1650,7 +1587,7 @@ export default function App() {
     try { const r = await postToN8n(writeUrl, buildPing()); const j = await r.json().catch(() => null); setConn((c) => ({ ...c, writeUrl, msg: `Ghi thử OK (HTTP ${r.status}${j && j.pong ? " · pong ✓" : ""})` })); }
     catch (e) { setConn((c) => ({ ...c, writeUrl, msg: "Lỗi ghi thử: " + (e && e.message ? e.message : "không rõ") })); }
   };
-  const resetDemo = () => { setObjects(SEED_OBJ); setActs(SEED_ACT); clearConn(); setConn({ readUrl: "", writeUrl: "", status: "demo", msg: "Đã khôi phục dữ liệu demo." }); };
+  const reloadData = () => { const c = loadConn() || {}; connectSheet(c.readUrl || conn.readUrl, c.writeUrl || conn.writeUrl); };
 
   // DASHBOARD tier — cập nhật ngày & trạng thái thực tế 1 hạng mục (mọi tài
   // khoản đều được phép). Gửi ĐỦ 9 trường (đã điền sẵn giá trị hiện có) để
@@ -1722,8 +1659,24 @@ export default function App() {
       <main ref={mainRef} className="vmp-scroll" style={{ flex: 1, overflowY: "auto", position: "relative", background: `radial-gradient(720px 520px at 88% -6%, ${C.pinkMist}, transparent 60%), radial-gradient(640px 520px at -6% 104%, ${C.lavSoft}, transparent 55%), radial-gradient(520px 420px at 50% 55%, rgba(226,241,250,.45), transparent 70%), linear-gradient(160deg, ${C.bg1}, ${C.bg2})` }}>
         {stars.map((s, i) => <div key={i} className="tw" style={{ position: "absolute", top: s.t, left: s.l, animationDelay: s.d }}><Sparkle size={s.s} color={s.c} /></div>)}
         <div style={{ position: "relative", zIndex: 1 }}>
-          <Topbar title={title} user={user} sub={SUBS[view]} />
+          <Topbar title={title} user={user} sub={SUBS[view]} onRefresh={reloadData} refreshing={conn.status === "loading"} />
           <div style={{ padding: "0 34px 38px" }}>
+            {objects.length === 0 && (
+              <div style={{ marginBottom: 22, padding: "16px 18px", borderRadius: 16, border: `1.5px solid ${conn.status === "err" ? C.raspSoft : C.pinkSoft}`, background: conn.status === "err" ? C.raspSoft : "#fff", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <div style={{ width: 44, height: 44, borderRadius: 13, flexShrink: 0, background: conn.status === "err" ? "#fff" : C.pinkMist, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {conn.status === "loading" ? <RefreshCw size={22} color={C.pink} className="spin" /> : conn.status === "err" ? <AlertCircle size={22} color={C.raspText} /> : <Cloud size={22} color={C.pink} />}
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ fontFamily: TEXT, fontWeight: 800, fontSize: 15, color: conn.status === "err" ? C.raspText : C.plum }}>
+                    {conn.status === "loading" ? "Đang tải dữ liệu từ Google Sheet…" : conn.status === "err" ? "Chưa tải được dữ liệu" : conn.readUrl ? "Đang chờ đồng bộ với Google Sheet…" : "Chưa cấu hình kết nối dữ liệu"}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 600, marginTop: 3 }}>
+                    {conn.msg || (conn.readUrl ? "Nếu chờ lâu, bấm Làm mới hoặc kiểm tra workflow n8n đang Active." : "Nhúng URL webhook n8n trong file src/lib/config.js rồi tải lại trang.")}
+                  </div>
+                </div>
+                {conn.readUrl && <button onClick={reloadData} style={{ ...btnPrimary, padding: "10px 18px", borderRadius: 12, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}><RefreshCw size={15} /> Thử lại</button>}
+              </div>
+            )}
             {view === "overview" && <Overview acts={enriched} setView={setView} />}
             {view === "timeline" && <TimelineView acts={enriched} />}
             {view === "inventory" && <InventoryView objects={objects} acts={enriched} canEdit={isAdmin} onSave={saveObject} onDelete={deleteObject} conn={conn} />}
