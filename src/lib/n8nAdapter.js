@@ -142,6 +142,10 @@ export function adaptFromN8n(payload) {
   for (const r of rows) {
     const code = s(r.ma);
     if (!code) continue;
+    // Bỏ qua dòng CHÚ THÍCH lẫn trong vùng dữ liệu: cột số (điểm trọng yếu /
+    // số ngày công) của dữ liệu thật luôn là số; nếu chứa chữ (vd "Gốc",
+    // "Dashboard") thì đó là nhãn phân vùng → loại để không tạo hạng mục rác.
+    if (/[a-zà-ỹ]/i.test(s(r.diem_trong_yeu)) || /[a-zà-ỹ]/i.test(s(r.so_ngay_cong))) continue;
 
     // --- Object (gộp theo mã đối tượng) ---
     const need = normStatus(r.td) === "done" || /^(x|y|yes|có|co)$/.test(lc(r.td)) || lc(r.show) === "x" || !!s(r.dl_vmp);
