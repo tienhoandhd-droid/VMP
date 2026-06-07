@@ -242,7 +242,10 @@ export function buildUpdateRow(id, patch, user) {
 
 /* ---------- Gọi mạng (fetch) có xử lý lỗi gọn ---------- */
 export async function fetchVmpData(readUrl) {
-  const res = await fetch(readUrl, { method: "GET" });
+  // cache:"no-store" + tham số thời gian → mỗi lần Làm mới/tải lại luôn lấy
+  // bản MỚI NHẤT từ Google Sheet, không bị trình duyệt/CDN trả bản cũ.
+  const bust = (readUrl.includes("?") ? "&" : "?") + "_t=" + Date.now();
+  const res = await fetch(readUrl + bust, { method: "GET", cache: "no-store" });
   if (!res.ok) throw new Error("HTTP " + res.status);
   const json = await res.json();
   return adaptFromN8n(json);
