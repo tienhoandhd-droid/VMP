@@ -83,6 +83,14 @@ const USERS = {
   bophan: { pass: "bp@123", name: "NV Bộ phận", role: "XSX / Kho / RD / Cơ điện", perm: "edit" },
 };
 const PERM_LABEL = { admin: "Quản trị", edit: "Chỉnh sửa", view: "Chỉ xem" };
+/* ===================== Helpers (khôi phục) ===================== */
+const parseD = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const addDays = (date, n) => { const x = new Date(date); x.setDate(x.getDate() + n); return x; };
+const addMonths = (date, n) => { const x = new Date(date); x.setMonth(x.getMonth() + n); return x; };
+const fmtVN = (date) => `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+const daysBetween = (a, b) => Math.round((a - b) / 86400000);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const pctYear = (date) => clamp(((date - YS) / (YE - YS)) * 100, 0, 100);
 const PROG = { done: 100, prog: 55, over: 75, todo: 20, plan: 8 };
 
 function milestones(act) {
