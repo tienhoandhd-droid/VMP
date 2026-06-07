@@ -60,7 +60,7 @@ function mapDept(boPhan) {
   if (/xsx|sản xuất|san xuat|xưởng|xuong|production|\bsx\b/.test(x)) return "sx";
   if (/cơ điện|co dien|mep|kỹ thuật|ky thuat|engineering|cđ|\bcd\b/.test(x)) return "cd";
   if (/\bkho\b|warehouse/.test(x)) return "kho";
-  if (/\brd\b|r&d|r & d|nghiên cứu|nghien cuu|research|qc|kiểm nghiệm|kiem nghiem|lab/.test(x)) return "rd";
+  if (/\brd\b|r&d|r & d|nghiên cứu|nghien cuu|research|qc|kiểm nghiệm|kiem nghiem|lab/.test(x)) return "qc";
   if (/\bqa\b|qlcl|đảm bảo|dam bao|quality assurance|chất lượng|chat luong/.test(x)) return "qa";
   return "qa"; // mặc định
 }
