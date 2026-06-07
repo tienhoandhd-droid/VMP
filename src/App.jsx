@@ -63,7 +63,7 @@ const DEPTS = [
   { id: "sx", name: "Xưởng sản xuất", short: "SX" },
   { id: "cd", name: "Cơ điện", short: "CĐ" },
   { id: "kho", name: "Kho", short: "Kho" },
-  { id: "qc", name: "QC – Kiểm nghiệm", short: "QC" },
+  { id: "qc", name: "RD / QC – Kiểm nghiệm", short: "RD/QC" },
   { id: "qa", name: "QA – QLCL", short: "QA" },
 ];
 const DEPT_DEEP = { sx: C.pinkText, cd: C.skyText, kho: C.marigoldText, qc: C.mintText, qa: C.lavText };
@@ -341,7 +341,6 @@ const NAV = [
   { id: "timeline", label: "Timeline VMP", icon: GanttChartSquare },
   { id: "inventory", label: "Danh mục đối tượng", icon: Boxes },
   { id: "update", label: "Cập nhật tiến độ", icon: Pencil },
-  { id: "alerts", label: "Cảnh báo & Tái thẩm định", icon: Radar },
   { id: "risk", label: "Đánh giá rủi ro (QRM)", icon: ShieldAlert },
   { id: "workload", label: "Tải công việc", icon: Activity },
   { id: "reports", label: "Báo cáo & AI", icon: FileBarChart },
@@ -553,40 +552,45 @@ function KpiCard({ emoji, bg, color, value, label, sub, subColor, rate }) {
 /* ===================== Gantt Timeline VMP ===================== */
 const MONTHS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
 const PHASE_COLOR = { done: C.mint, current: C.marigold, over: C.rasp, future: "#D9C3D5" };
-function GanttRow({ a }) {
+function GanttRow({ a, idx }) {
   const ps = phaseStates(a), m = ps.m;
   const x0 = pctYear(m.protocol), xV = pctYear(m.validation), xR = pctYear(m.report), xT = pctYear(m.target);
   const span = (xT - x0) || 1;
-  const seg = (lp, rp, status) => (rp - lp) > 0.4 ? <div title={status} style={{ position: "absolute", left: lp + "%", width: (rp - lp) + "%", top: 0, bottom: 0, background: PHASE_COLOR[status], opacity: status === "future" ? 0.55 : 0.92, borderRadius: 4 }} /> : null;
-  const cls = CLS[a.cls];
   const a1 = ((xV - x0) / span) * 100, a2 = ((xR - x0) / span) * 100;
-  // Vị trí "vận động viên" theo tiến độ pha đã xong
+  const cls = CLS[a.cls];
+  const over = a.st === "over";
+  const seg = (lp, rp, status, label) => (rp - lp) > 0.5 ? <div title={label} style={{ position: "absolute", left: lp + "%", width: (rp - lp) + "%", top: 0, bottom: 0, background: PHASE_COLOR[status], opacity: status === "future" ? 0.5 : 0.95, borderRadius: 5, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.55)" }} /> : null;
   const runPct = ps.r === "done" ? 100 : ps.v === "done" ? a2 : ps.p === "done" ? a1 : (PROG[a.st] || 8) * 0.3;
-  const runner = a.st === "done" ? "🏆" : a.st === "over" ? "🐢" : "🏃";
+  const runner = a.st === "done" ? "🏆" : over ? "🐢" : "🏃";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
-      <div style={{ width: 188, flexShrink: 0 }}>
+    <div className="vmp-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderRadius: 10, background: over ? "rgba(225,75,120,.07)" : (idx % 2 ? "rgba(255,255,255,.5)" : "transparent") }}>
+      <div style={{ width: 188, flexShrink: 0, paddingLeft: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Tag color={cls.text} bg={cls.soft}>{a.vtype}</Tag><span style={{ fontFamily: "monospace", fontSize: 11.5, fontWeight: 700, color: C.plumSoft }}>{a.code}</span></div>
-        <div style={{ fontSize: 11.5, color: C.plum, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>{a.name}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}><Pill s={a.st} small /><span style={{ fontSize: 11.5, color: C.plum, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 92 }}>{a.name}</span></div>
       </div>
-      <div style={{ flex: 1, position: "relative", height: 24, minWidth: 220 }}>
-        <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: "rgba(78,42,78,.04)" }} />
+      <div style={{ flex: 1, position: "relative", height: 30, minWidth: 220 }}>
+        <div style={{ position: "absolute", inset: 0, borderRadius: 8, background: "rgba(78,42,78,.05)" }} />
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => <div key={i} style={{ position: "absolute", left: (i / 12) * 100 + "%", top: 0, bottom: 0, width: 1, background: C.line }} />)}
-        <div style={{ position: "absolute", left: x0 + "%", width: span + "%", top: 5, bottom: 5 }}>
-          {seg(0, a1, ps.p)}
-          {seg(a1, a2, ps.v)}
-          {seg(a2, 100, ps.r)}
-          <span style={{ position: "absolute", left: runPct + "%", top: "50%", transform: "translate(-50%,-50%)", fontSize: 14, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.2))", zIndex: 3 }}>{runner}</span>
+        <div style={{ position: "absolute", left: x0 + "%", width: span + "%", top: 6, bottom: 6 }}>
+          {seg(0, a1, ps.p, "① Đề cương (T-60)")}
+          {seg(a1, a2, ps.v, "② Thẩm định thực tế")}
+          {seg(a2, 100, ps.r, "③ Báo cáo (T-5)")}
+          <span style={{ position: "absolute", left: runPct + "%", top: "50%", transform: "translate(-50%,-50%)", width: 22, height: 22, borderRadius: 999, background: "#fff", boxShadow: "0 2px 6px rgba(0,0,0,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 4 }}>{runner}</span>
         </div>
-        <div style={{ position: "absolute", left: xT + "%", top: "50%", transform: "translate(-50%,-50%)", fontSize: 13, zIndex: 2 }}>🏁</div>
+        <span style={{ position: "absolute", left: xT + "%", top: "50%", transform: "translate(-50%,-50%)", fontSize: 15, zIndex: 3, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.25))" }}>🏁</span>
       </div>
-      <div style={{ width: 96, flexShrink: 0, textAlign: "right" }}><div style={{ fontFamily: NUM, fontSize: 12.5, fontWeight: 800, color: a.st === "over" ? C.raspText : C.plum }}>{fmtVN(m.target)}</div><div style={{ fontSize: 10.5, color: C.plumSoft, fontWeight: 600 }}>đích VMP</div></div>
+      <div style={{ width: 96, flexShrink: 0, textAlign: "right", paddingRight: 4 }}><div style={{ fontFamily: NUM, fontSize: 12.5, fontWeight: 800, color: over ? C.raspText : C.plum }}>{fmtVN(m.target)}</div><div style={{ fontSize: 10.5, color: C.plumSoft, fontWeight: 600 }}>đích VMP</div></div>
     </div>
   );
 }
 function TimelineView({ acts }) {
-  const [cls, setCls] = useState("all"); const [dept, setDept] = useState("all");
-  const filtered = acts.filter((a) => (cls === "all" || a.cls === cls) && (dept === "all" || a.dept === dept)).sort((x, y) => parseD(x.target) - parseD(y.target));
+  const [cls, setCls] = useState("all"); const [dept, setDept] = useState("all"); const [q, setQ] = useState("");
+  const filtered = acts.filter((a) => {
+    if (cls !== "all" && a.cls !== cls) return false;
+    if (dept !== "all" && a.dept !== dept) return false;
+    if (q.trim()) { const s = q.trim().toLowerCase(); if (![a.code, a.name, a.owner, a.id, a.vtype].some((x) => String(x || "").toLowerCase().includes(s))) return false; }
+    return true;
+  }).sort((x, y) => parseD(x.target) - parseD(y.target));
   const todayX = pctYear(VMP_TODAY);
   const Sel = ({ val, set, opts }) => <select value={val} onChange={(e) => set(e.target.value)} style={{ ...glass, borderRadius: 12, padding: "9px 14px", fontFamily: TEXT, fontSize: 13, color: C.plum, fontWeight: 700, cursor: "pointer", outline: "none" }}>{opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select>;
   const legend = [["done", "Hoàn thành"], ["current", "Đang/tới hạn"], ["over", "Quá hạn"], ["future", "Kế hoạch"]];
@@ -597,6 +601,8 @@ function TimelineView({ acts }) {
           <div style={{ display: "flex", alignItems: "center", gap: 7, color: C.plumSoft }}><Filter size={15} /> <span style={{ fontSize: 13, fontWeight: 800 }}>Lọc:</span></div>
           <Sel val={cls} set={setCls} opts={[{ v: "all", l: "Tất cả nhóm" }].concat(Object.keys(CLS).map((k) => ({ v: k, l: CLS[k].label })))} />
           <Sel val={dept} set={setDept} opts={[{ v: "all", l: "Tất cả bộ phận" }].concat(DEPTS.map((d) => ({ v: d.id, l: d.name })))} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 13px", borderRadius: 12, border: `1.5px solid ${C.pinkSoft}`, background: "#fff", flex: 1, minWidth: 200 }}><Search size={15} color={C.pink} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm theo mã, tên, QA, ID…" style={{ border: "none", outline: "none", background: "transparent", fontFamily: TEXT, fontSize: 13.5, color: C.plum, width: "100%", fontWeight: 600 }} /></div>
+          {(cls !== "all" || dept !== "all" || q.trim()) && <button onClick={() => { setCls("all"); setDept("all"); setQ(""); }} style={{ padding: "8px 13px", borderRadius: 999, border: "none", cursor: "pointer", background: C.raspSoft, color: C.raspText, fontFamily: TEXT, fontWeight: 800, fontSize: 12.5 }}>✕ Xoá lọc</button>}
         </div>
         <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 14, background: C.pinkMist, display: "flex", flexDirection: "column", gap: 9 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: C.plum }}>🏁 Cách đọc đường đua — mỗi hạng mục chạy từ trái sang đích VMP (T):</div>
@@ -633,7 +639,8 @@ function TimelineView({ acts }) {
               <div style={{ position: "absolute", left: `calc(198px + (100% - 304px) * ${todayX / 100})`, top: -2, bottom: 0, width: 2, background: C.raspText, zIndex: 5 }}>
                 <span style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.raspText, padding: "1px 6px", borderRadius: 6, whiteSpace: "nowrap" }}>Hôm nay</span>
               </div>
-              {filtered.map((a) => <GanttRow key={a.id} a={a} />)}
+              {filtered.map((a, i) => <GanttRow key={a.id} a={a} idx={i} />)}
+              {filtered.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: C.plumSoft, fontWeight: 700 }}>Không có hạng mục nào khớp bộ lọc — thử xoá lọc nhé.</div>}
             </div>
           </div>
         </div>
@@ -1267,14 +1274,17 @@ function Overview({ acts, setView }) {
       <DeptRace acts={acts} />
       <IndividualLeaderboard acts={acts} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
-        <MonthlyClimb total={e.total} gap={gap} />
-        <Card variant="soft">
-          <CardTitle icon={Radar} right={<button onClick={() => setView("alerts")} style={{ fontSize: 12.5, color: C.pinkText, fontWeight: 800, cursor: "pointer", border: "none", background: "transparent", display: "flex", alignItems: "center", gap: 4 }}>Xem tất cả <ChevronRight size={14} /></button>}>Cảnh báo cần xử lý</CardTitle>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {alertList.length ? alertList.map((a) => <MiniAlert key={a.id} a={a} />) : <div style={{ textAlign: "center", padding: 24, color: C.mintText, fontWeight: 700 }}>🎉 Không có cảnh báo nào!</div>}
+      <MonthlyClimb total={e.total} gap={gap} />
+
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 2px 16px" }}>
+          <div style={{ width: 38, height: 38, borderRadius: 12, background: C.raspSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Radar size={20} color={C.raspText} /></div>
+          <div>
+            <div style={{ fontFamily: TEXT, fontSize: 18, fontWeight: 800, color: C.plum }}>Cảnh báo &amp; Tái thẩm định</div>
+            <div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 600 }}>Bấm vào thẻ để lọc nhanh việc quá hạn · tới hạn · tái thẩm định sắp tới</div>
           </div>
-        </Card>
+        </div>
+        <AlertsView acts={acts} />
       </div>
 
       <div style={{ textAlign: "center", padding: "8px 0 4px", fontFamily: TEXT, fontSize: 12, color: C.plumSoft, fontWeight: 700 }}>✨ VMP Monitor · CPC1 HN · V/Q Team — QLCL · EU GMP Annex 15 · WHO · PIC/S ✨</div>
@@ -1285,6 +1295,8 @@ function Overview({ acts, setView }) {
 /* ===================== App ===================== */
 
 /* ===== MA TRẬN TẢI CÔNG VIỆC (Người × Tháng) — tích hợp từ bản người dùng ===== */
+const WL_MONTHS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
+const WL_QUARTERS = ["Quý 1", "Quý 2", "Quý 3", "Quý 4"];
 // ⚙️ NGÀY CÔNG (ước lượng) — chỉnh các con số này cho khớp năng lực thực tế của đội:
 const CAP_MONTH = 10;            // ngưỡng "đầy tải" (ngày công/tháng)
 const CAP_HOSO_MONTH = 3;        // ngưỡng "nhiều hồ sơ" (số hồ sơ phải trả/tháng)
@@ -1716,7 +1728,6 @@ export default function App() {
             {view === "timeline" && <TimelineView acts={enriched} />}
             {view === "inventory" && <InventoryView objects={objects} acts={enriched} canEdit={isAdmin} onSave={saveObject} onDelete={deleteObject} conn={conn} />}
             {view === "update" && <UpdateView acts={enriched} conn={conn} isAdmin={isAdmin} onUpdate={updateActivity} />}
-            {view === "alerts" && <AlertsView acts={enriched} />}
             {view === "risk" && <QrmView acts={enriched} />}
             {view === "workload" && <WorkloadView acts={enriched} />}
             {view === "reports" && <ReportsView acts={enriched} />}
