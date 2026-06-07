@@ -456,12 +456,16 @@ function IndividualLeaderboard({ acts }) {
 }
 
 /* ===================== Monthly cumulative ===================== */
-const TREND = [
-  { m: "T1", exec: 1, doc: 0 }, { m: "T2", exec: 3, doc: 2 }, { m: "T3", exec: 5, doc: 3 },
-  { m: "T4", exec: 6, doc: 4 }, { m: "T5", exec: 7, doc: 5 }, { m: "T6", exec: 7, doc: 5 },
-];
-function MonthlyClimb({ total, gap }) {
-  const ExecDot = (p) => { const { cx, cy, index, value } = p; if (cx == null) return null; const last = index === TREND.length - 1; return (
+function MonthlyClimb({ acts }) {
+  // Lũy kế THẬT theo tháng: số hạng mục có Deadline VMP tới tháng đó, đã xong thực tế / đã xong hồ sơ.
+  const total = acts.length;
+  const data = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"].map((m, i) => {
+    const mn = i + 1;
+    const due = acts.filter((a) => { const mm = a.target ? Number(String(a.target).split("-")[1]) : 0; return mm >= 1 && mm <= mn; });
+    return { m, exec: due.filter((a) => a.st === "done").length, doc: due.filter((a) => a.docDone).length };
+  });
+  const gap = (data[data.length - 1] ? data[data.length - 1].exec - data[data.length - 1].doc : 0);
+  const ExecDot = (p) => { const { cx, cy, index, value } = p; if (cx == null) return null; const last = index === data.length - 1; return (
     <g><circle cx={cx} cy={cy} r={last ? 6 : 4.5} fill="#fff" stroke={C.mint} strokeWidth={last ? 3.5 : 2.6} /><text x={cx} y={cy - 12} textAnchor="middle" fontSize="11.5" fontWeight="800" fill={C.mintText} fontFamily={NUM}>{value}</text>{last && <text x={cx} y={cy - 29} textAnchor="middle" fontSize="18">🚩</text>}</g>
   ); };
   const DocDot = (p) => { const { cx, cy, value } = p; if (cx == null) return null; return (
@@ -473,11 +477,11 @@ function MonthlyClimb({ total, gap }) {
       <CardTitle icon={TrendingUp} right={legend} sub="Số hạng mục cộng dồn đã hoàn thành theo tháng (trên tổng kế hoạch năm)">Hành trình lũy kế theo tháng</CardTitle>
       <div style={{ height: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={TREND} margin={{ top: 40, right: 18, left: -8, bottom: 4 }}>
+          <AreaChart data={data} margin={{ top: 40, right: 18, left: -8, bottom: 4 }}>
             <defs><linearGradient id="gE" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.mint} stopOpacity={0.32} /><stop offset="100%" stopColor={C.mint} stopOpacity={0} /></linearGradient><linearGradient id="gD" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.sky} stopOpacity={0.26} /><stop offset="100%" stopColor={C.sky} stopOpacity={0} /></linearGradient></defs>
             <CartesianGrid vertical={false} stroke={C.line} />
             <XAxis dataKey="m" tick={{ fontSize: 13, fill: C.plum, fontFamily: TEXT, fontWeight: 700 }} axisLine={false} tickLine={false} />
-            <YAxis domain={[0, total]} tick={{ fontSize: 12, fill: C.plumSoft, fontFamily: TEXT, fontWeight: 600 }} axisLine={false} tickLine={false} allowDecimals={false} />
+            <YAxis domain={[0, Math.max(total, 1)]} tick={{ fontSize: 12, fill: C.plumSoft, fontFamily: TEXT, fontWeight: 600 }} axisLine={false} tickLine={false} allowDecimals={false} />
             <Tooltip content={<ChartTip />} />
             <ReferenceLine y={total} stroke={C.pink} strokeDasharray="5 5" strokeOpacity={0.55} />
             <Area type="monotone" dataKey="doc" name="Hồ sơ" stroke={C.sky} strokeWidth={2.8} fill="url(#gD)" dot={DocDot} activeDot={{ r: 6 }} />
@@ -485,7 +489,7 @@ function MonthlyClimb({ total, gap }) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: TEXT, fontSize: 13, color: C.plum, fontWeight: 700, padding: "10px 13px", borderRadius: 12, background: C.marigoldSoft }}><Clock size={15} color={C.marigoldText} /><span>Hồ sơ chậm hơn thực tế <b>{gap} hạng mục</b>. Nét đứt = tổng KH năm ({total}); phần lớn lịch dồn vào nửa cuối năm.</span></div>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, fontFamily: TEXT, fontSize: 13, color: C.plum, fontWeight: 700, padding: "10px 13px", borderRadius: 12, background: C.marigoldSoft }}><Clock size={15} color={C.marigoldText} /><span>Hồ sơ đang chậm hơn thực tế <b>{gap} hạng mục</b>. Nét đứt = tổng kế hoạch năm ({total} hạng mục).</span></div>
     </Card>
   );
 }
@@ -506,7 +510,7 @@ function KpiCard({ emoji, bg, color, value, label, sub, subColor, rate }) {
 /* ===================== Gantt Timeline VMP ===================== */
 const MONTHS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
 const PHASE_COLOR = { done: C.mint, current: C.marigold, over: C.rasp, future: "#D9C3D5" };
-function GanttRow({ a, idx }) {
+function GanttRow({ a, idx, onOpen }) {
   const ps = phaseStates(a), m = ps.m;
   const x0 = pctYear(m.protocol), xV = pctYear(m.validation), xR = pctYear(m.report), xT = pctYear(m.target);
   const span = (xT - x0) || 1;
@@ -517,7 +521,7 @@ function GanttRow({ a, idx }) {
   const runPct = ps.r === "done" ? 100 : ps.v === "done" ? a2 : ps.p === "done" ? a1 : (PROG[a.st] || 8) * 0.3;
   const runner = a.st === "done" ? "🏆" : over ? "🐢" : "🏃";
   return (
-    <div className="vmp-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderRadius: 10, background: over ? "rgba(225,75,120,.07)" : (idx % 2 ? "rgba(255,255,255,.5)" : "transparent") }}>
+    <div className="vmp-row" onClick={() => onOpen && onOpen(a)} title="Bấm để xem chi tiết" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderRadius: 10, cursor: "pointer", background: over ? "rgba(225,75,120,.07)" : (idx % 2 ? "rgba(255,255,255,.5)" : "transparent") }}>
       <div style={{ width: 188, flexShrink: 0, paddingLeft: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Tag color={cls.text} bg={cls.soft}>{a.vtype}</Tag><span style={{ fontFamily: "monospace", fontSize: 11.5, fontWeight: 700, color: C.plumSoft }}>{a.code}</span></div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}><Pill s={a.st} small /><span style={{ fontSize: 11.5, color: C.plum, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 92 }}>{a.name}</span></div>
@@ -538,7 +542,7 @@ function GanttRow({ a, idx }) {
   );
 }
 function TimelineView({ acts }) {
-  const [cls, setCls] = useState("all"); const [dept, setDept] = useState("all"); const [q, setQ] = useState("");
+  const [cls, setCls] = useState("all"); const [dept, setDept] = useState("all"); const [q, setQ] = useState(""); const [detail, setDetail] = useState(null);
   const filtered = acts.filter((a) => {
     if (cls !== "all" && a.cls !== cls) return false;
     if (dept !== "all" && a.dept !== dept) return false;
@@ -593,12 +597,13 @@ function TimelineView({ acts }) {
               <div style={{ position: "absolute", left: `calc(198px + (100% - 304px) * ${todayX / 100})`, top: -2, bottom: 0, width: 2, background: C.raspText, zIndex: 5 }}>
                 <span style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 9.5, fontWeight: 800, color: "#fff", background: C.raspText, padding: "1px 6px", borderRadius: 6, whiteSpace: "nowrap" }}>Hôm nay</span>
               </div>
-              {filtered.map((a, i) => <GanttRow key={a.id} a={a} idx={i} />)}
+              {filtered.map((a, i) => <GanttRow key={a.id} a={a} idx={i} onOpen={setDetail} />)}
               {filtered.length === 0 && <div style={{ textAlign: "center", padding: "40px 0", color: C.plumSoft, fontWeight: 700 }}>Không có hạng mục nào khớp bộ lọc — thử xoá lọc nhé.</div>}
             </div>
           </div>
         </div>
       </Card>
+      <ActivityDetailModal a={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
@@ -777,6 +782,75 @@ function EditObjModal({ obj, isNew, onClose, onSave }) {
 }
 /* ===== DASHBOARD tier: nhập tiến độ thực tế (mọi tài khoản) ===== */
 const TT_OPTS = ["", "Chưa thực hiện", "Đang thực hiện", "Hoàn thành"];
+/* Nhãn trạng thái cho 1 pha (tự nhận diện, có xét phủ định "chưa/không") */
+function phaseTag(txt) {
+  const s = String(txt == null ? "" : txt).trim();
+  const lc = s.toLowerCase();
+  const neg = /\b(chưa|chua|không|khong)\b/.test(lc) || /^\s*(chưa|chua|không|khong)/.test(lc);
+  const done = !neg && /hoàn thành|hoan thanh|done|đạt|✓|✔|100|xong/.test(lc);
+  const prog = !neg && /đang|dang|thực hiện|thuc hien|progress|wip/.test(lc);
+  const c = done ? { l: "✓ Hoàn thành", col: C.mintText, bg: C.mintSoft }
+    : prog ? { l: "● Đang làm", col: C.marigoldText, bg: C.marigoldSoft }
+    : s ? { l: "○ " + (s.length > 16 ? s.slice(0, 16) + "…" : s), col: C.skyText, bg: C.skySoft }
+    : { l: "Chưa có", col: C.plumSoft, bg: "rgba(122,74,110,.08)" };
+  return <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11.5, fontWeight: 800, color: c.col, background: c.bg, whiteSpace: "nowrap" }}>{c.l}</span>;
+}
+/* Modal CHI TIẾT 1 hạng mục — hiển thị đầy đủ mọi trường + vòng đời 4 pha */
+function ActivityDetailModal({ a, onClose }) {
+  if (!a) return null;
+  const r = a._raw || {};
+  const m = a.m || milestones(a);
+  const cls = CLS[a.cls] || CLS.tb;
+  const dp = DEPTS.find((d) => d.id === a.dept);
+  const ct = CRIT[a.crit] || CRIT.TB;
+  const dShow = (v) => { const t = String(v == null ? "" : v).trim(); return t || "—"; };
+  const has = (v) => String(v == null ? "" : v).trim() !== "";
+  const info = [
+    ["Phân loại", cls.label], ["Bộ phận", dp ? dp.name : dShow(r.bo_phan)], ["Line", dShow(r.line)],
+    ["Khu vực", dShow(r.khu_vuc)], ["Tình trạng", dShow(r.tinh_trang)], ["Tần suất", has(r.tan_suat) ? dShow(r.tan_suat) + " tháng" : "—"],
+    ["PL báo cáo", dShow(a.dep)], ["Ngày công", a.effort != null ? String(a.effort) : "—"], ["Điểm trọng yếu", a.score != null ? a.score + " / 9" : "—"],
+  ];
+  const phases = [
+    { ic: "📝", label: "Đề cương", note: "Hạn T‑60", dl: has(r.dl_de_cuong) ? dShow(r.dl_de_cuong) : fmtVN(m.protocol), act: r.ngay_de_cuong, st: r.tt_de_cuong },
+    { ic: "🔬", label: "Thẩm định thực tế", note: "Hạn T‑5‑BC", dl: has(r.dl_tham_dinh) ? dShow(r.dl_tham_dinh) : fmtVN(m.validation), act: r.ngay_tham_dinh, st: r.tt_tham_dinh, sched: r.lich_td },
+    { ic: "📄", label: "Báo cáo", note: "Hạn T‑5", dl: has(r.dl_bao_cao) ? dShow(r.dl_bao_cao) : fmtVN(m.report), act: r.ngay_bao_cao, st: r.tt_bao_cao },
+    { ic: "🏁", label: "Hoàn tất VMP", note: "Đích VMP (T)", dl: has(r.dl_vmp) ? dShow(r.dl_vmp) : fmtVN(m.target), act: r.ngay_vmp, st: r.tt_vmp },
+  ];
+  return (
+    <Modal onClose={onClose} title="Chi tiết hạng mục" icon={FileText} wide>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap", marginBottom: 6 }}>
+        <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 800, color: cls.text, background: cls.soft, padding: "4px 10px", borderRadius: 9 }}>{a.code}</span>
+        <Tag color={cls.text} bg={cls.soft}>{a.vtype}</Tag>
+        <Tag color={ct.text} bg={ct.soft}>Rủi ro {a.crit}</Tag>
+        <Pill s={a.st} small />
+      </div>
+      <div style={{ fontFamily: TEXT, fontSize: 18, fontWeight: 800, color: C.plum, marginBottom: 16 }}>{a.name}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 9, marginBottom: 14 }}>
+        {info.map(([k, v]) => <div key={k} style={{ background: "#fff", borderRadius: 11, padding: "8px 11px" }}><div style={{ fontSize: 10, color: C.plumSoft, fontWeight: 800, textTransform: "uppercase", letterSpacing: .3 }}>{k}</div><div style={{ fontSize: 13.5, color: C.plum, fontWeight: 700, marginTop: 2 }}>{v}</div></div>)}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+        <div style={{ flex: 1, minWidth: 190, background: C.pinkSoft, borderRadius: 12, padding: "10px 13px" }}><div style={{ fontSize: 10, color: C.pinkText, fontWeight: 800, textTransform: "uppercase" }}>QA phụ trách</div><div style={{ fontSize: 14, color: C.plum, fontWeight: 800, marginTop: 2 }}>{dShow(r.qa)}</div>{has(r.email_qa) && <div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 600 }}>{r.email_qa}</div>}</div>
+        <div style={{ flex: 1, minWidth: 190, background: C.lavSoft, borderRadius: 12, padding: "10px 13px" }}><div style={{ fontSize: 10, color: C.lavText, fontWeight: 800, textTransform: "uppercase" }}>NS bộ phận khác</div><div style={{ fontSize: 14, color: C.plum, fontWeight: 800, marginTop: 2 }}>{dShow(r.ns_khac)}</div>{has(r.email_khac) && <div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 600 }}>{r.email_khac}</div>}</div>
+      </div>
+      <div style={{ fontFamily: TEXT, fontSize: 14, fontWeight: 800, color: C.plum, marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}><CalendarClock size={17} color={C.pink} /> Vòng đời thẩm định (Hạn · Thực tế · Trạng thái)</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {phases.map((p, i) => (
+          <div key={i} style={{ background: "#fff", borderRadius: 14, padding: "11px 14px", borderLeft: `4px solid ${has(p.act) ? C.mint : C.pinkSoft}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}><span style={{ fontSize: 18 }}>{p.ic}</span><div><div style={{ fontSize: 14, fontWeight: 800, color: C.plum }}>{p.label}</div><div style={{ fontSize: 10.5, color: C.plumSoft, fontWeight: 600 }}>{p.note}</div></div></div>
+              {phaseTag(p.st)}
+            </div>
+            <div style={{ display: "flex", gap: 18, marginTop: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+              <span style={{ color: C.plumSoft, fontWeight: 600 }}>Hạn: <b style={{ color: C.plum }}>{dShow(p.dl)}</b></span>
+              <span style={{ color: C.plumSoft, fontWeight: 600 }}>Thực tế: <b style={{ color: has(p.act) ? C.mintText : "#C9B6C7" }}>{dShow(p.act)}</b></span>
+              {p.sched != null && has(p.sched) && <span style={{ color: C.plumSoft, fontWeight: 600 }}>Lịch xếp: <b style={{ color: C.plum }}>{dShow(p.sched)}</b></span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
 function ROField({ label, value }) {
   return <div style={FIELD}><span style={LBL}>{label}</span><div style={{ ...INP, background: C.lavSoft, color: C.plumSoft, borderColor: C.lavSoft, display: "flex", alignItems: "center", minHeight: 20 }}>{value || "—"}</div></div>;
 }
@@ -838,8 +912,9 @@ const STAGES = [
   { id: "bc", label: "Đang/đã làm báo cáo", color: C.pinkText, bg: C.pinkSoft },
   { id: "done", label: "Hoàn thành VMP", color: C.mintText, bg: C.mintSoft },
 ];
-const _doneTxt = (v) => /hoàn thành|hoan thanh|done|đạt|dat|✓|✔|100|xong/i.test(String(v == null ? "" : v));
-const _progTxt = (v) => /đang|dang|progress|wip/i.test(String(v == null ? "" : v));
+const _neg = (v) => { const s = String(v == null ? "" : v).toLowerCase(); return /\b(chưa|chua|không|khong)\b/.test(s) || /^\s*(chưa|chua|không|khong)/.test(s); };
+const _doneTxt = (v) => !_neg(v) && /hoàn thành|hoan thanh|done|đạt|dat|✓|✔|100|xong/i.test(String(v == null ? "" : v));
+const _progTxt = (v) => !_neg(v) && /đang|dang|progress|thực hiện|thuc hien|wip/i.test(String(v == null ? "" : v));
 function stageOf(a) {
   const r = a._raw || {};
   if (a.st === "done" || _doneTxt(r.tt_vmp)) return "done";
@@ -1184,6 +1259,9 @@ function Overview({ acts, setView }) {
   const topOver = [...overByDept].sort((a, b) => b.n - a.n)[0] || { name: "—", n: 0 };
   const [mood, setMood] = useState(overdue.length > 2 ? "stressed" : "happy"); const [cheer, setCheer] = useState(0);
   const cheerUp = () => { setMood((m) => (m === "happy" ? "stressed" : "happy")); setCheer((c) => c + 1); };
+  const [detail, setDetail] = useState(null);
+  // Trọng tâm: việc cần xử lý ngay — quá hạn trước (trễ nhiều nhất), rồi tới hạn gần nhất.
+  const focus = acts.filter((a) => a.alert).sort((p, q) => { const ord = (x) => (x.alert.kind === "over" ? 0 : 1); return ord(p) !== ord(q) ? ord(p) - ord(q) : (p.alert.dleft || 0) - (q.alert.dleft || 0); }).slice(0, 6);
   const bubble = mood === "happy" ? "Tuyệt vời! Mọi việc đang trong tầm tay. Cùng cố lên nha! ✨👑" : `Ôi, có ${overdue.length} việc quá hạn lận... tóc mình rối hết rồi nè! 😵‍💫 Bấm vào mình để được vỗ về nhé~`;
   const insights = [
     { icon: Clock, color: C.marigoldText, bg: C.marigoldSoft, title: "KHOẢNG CÁCH HỒ SƠ", text: `Hồ sơ chậm hơn thực tế ${gap} hạng mục (≈${gapPts} điểm %).` },
@@ -1211,6 +1289,28 @@ function Overview({ acts, setView }) {
         <KpiCard emoji="⏰" bg={C.raspSoft} color={C.raspText} value={overdue.length} label="Hạng mục quá hạn" sub={`Tới hạn ≤30 ngày: ${soon.length}`} subColor={C.raspText} />
       </div>
 
+      <Card variant="strong" style={{ background: `linear-gradient(120deg,#fff,${C.raspSoft})` }}>
+        <CardTitle icon={Flag} sub="Sắp theo độ gấp — quá hạn trước, rồi tới hạn gần nhất · Bấm 1 dòng để xem chi tiết">🎯 Trọng tâm cần xử lý ngay</CardTitle>
+        {focus.length === 0 ? <div style={{ textAlign: "center", padding: 22, color: C.mintText, fontWeight: 800 }}>🎉 Tuyệt! Không có việc quá hạn hay sắp tới hạn.</div> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {focus.map((a) => { const over = a.alert.kind === "over"; const ct = CRIT[a.crit] || CRIT.TB; const cls = CLS[a.cls] || CLS.tb; return (
+              <div key={a.id} onClick={() => setDetail(a)} className="vmp-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 14, background: "#fff", cursor: "pointer", borderLeft: `4px solid ${over ? C.rasp : C.marigold}` }}>
+                <div style={{ width: 50, textAlign: "center", flexShrink: 0 }}>
+                  <div style={{ fontFamily: NUM, fontSize: 19, fontWeight: 800, color: over ? C.raspText : C.marigoldText }}>{over ? `−${Math.abs(a.alert.dleft)}` : a.alert.dleft}</div>
+                  <div style={{ fontSize: 9.5, color: C.plumSoft, fontWeight: 700 }}>{over ? "ngày trễ" : "ngày tới"}</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}><Tag color={cls.text} bg={cls.soft}>{a.vtype}</Tag><span style={{ fontFamily: TEXT, fontSize: 13.5, fontWeight: 800, color: C.plum, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</span></div>
+                  <div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 600, marginTop: 2 }}>Cần làm: <b style={{ color: over ? C.raspText : C.marigoldText }}>{a.alert.stage}</b> · phụ trách {a.owner}</div>
+                </div>
+                <Tag color={ct.text} bg={ct.soft}>{a.crit}</Tag>
+                <ChevronRight size={16} color={C.plumSoft} style={{ flexShrink: 0 }} />
+              </div>
+            ); })}
+          </div>
+        )}
+      </Card>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 24 }}>
         {insights.map((it, i) => { const Icon = it.icon; return (
           <Card key={i} variant="soft" style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: 20, background: "#fff" }}>
@@ -1228,7 +1328,7 @@ function Overview({ acts, setView }) {
       <DeptRace acts={acts} />
       <IndividualLeaderboard acts={acts} />
 
-      <MonthlyClimb total={e.total} gap={gap} />
+      <MonthlyClimb acts={acts} />
 
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 2px 16px" }}>
@@ -1242,6 +1342,7 @@ function Overview({ acts, setView }) {
       </div>
 
       <div style={{ textAlign: "center", padding: "8px 0 4px", fontFamily: TEXT, fontSize: 12, color: C.plumSoft, fontWeight: 700 }}>✨ VMP Monitor · CPC1 HN · V/Q Team — QLCL · EU GMP Annex 15 · WHO · PIC/S ✨</div>
+      <ActivityDetailModal a={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
