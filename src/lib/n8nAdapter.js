@@ -89,9 +89,11 @@ function critFromScore(v) {
 function normStatus(v) {
   const x = lc(v);
   if (!x) return "";
-  if (/hoàn thành|hoan thanh|done|đạt|dat|complete|✓|✔|100|xong|ok\b/.test(x)) return "done";
-  if (/đang|dang|progress|thực hiện|thuc hien|in[-\s]?progress|wip|làm|lam/.test(x)) return "prog";
-  if (/chưa|chua|not|todo|chờ|cho\b|pending|kế hoạch|ke hoach|plan/.test(x)) return "todo";
+  // XÉT PHỦ ĐỊNH TRƯỚC: "chưa hoàn thành", "không đạt"… KHÔNG phải done.
+  const neg = /\b(chưa|chua|không|khong)\b/.test(x) || /^\s*(chưa|chua|không|khong)/.test(x);
+  if (!neg && /hoàn thành|hoan thanh|done|đạt|dat|complete|✓|✔|100|xong|ok\b/.test(x)) return "done";
+  if (!neg && /đang|dang|progress|thực hiện|thuc hien|in[-\s]?progress|wip/.test(x)) return "prog";
+  if (neg || /todo|chờ|cho\b|pending|kế hoạch|ke hoach|plan/.test(x)) return "todo";
   return ""; // không nhận diện được -> coi như rỗng
 }
 
@@ -123,6 +125,11 @@ function deriveSt(row, today) {
  *  ĐỌC: webhook n8n  ->  { objects, activities } cho app
  * ===================================================================== */
 export function adaptFromN8n(payload) {
+  // Webhook n8n có thể trả về MẢNG (tuỳ cấu hình node Respond) → tự bóc cho đúng.
+  if (Array.isArray(payload)) {
+    if (payload.length && payload[0] && Array.isArray(payload[0].rows)) payload = payload[0];   // [{ ok, count, rows }]
+    else payload = { rows: payload };                                                            // [ {dòng}, {dòng}, ... ]
+  }
   // Tương thích ngược: nếu đã đúng định dạng app thì trả về luôn.
   if (payload && (Array.isArray(payload.objects) || Array.isArray(payload.activities))) {
     return {
