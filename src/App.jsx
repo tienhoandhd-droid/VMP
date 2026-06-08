@@ -48,7 +48,7 @@ const MST = {
 };
 
 /* ===================== Cấu trúc VMP — theo Google Sheet của bạn ===================== */
-const VMP_TODAY = new Date(2026, 5, 5);
+const VMP_TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 const YS = new Date(2026, 0, 1), YE = new Date(2026, 11, 31);
 const SOON_DAYS = 30;
 
@@ -1111,7 +1111,12 @@ function InventoryView({ objects, acts, canEdit, onSave, onDelete, conn }) {
 }
 
 /* ===================== Reports + AI ===================== */
-const PLABEL = { tuan: { t: "BÁO CÁO TUẦN", p: "Tuần 23/2026 (02/06 – 08/06/2026)" }, thang: { t: "BÁO CÁO THÁNG", p: "Tháng 5/2026" }, quy: { t: "BÁO CÁO QUÝ", p: "Quý II/2026" } };
+const _qNow = Math.floor(VMP_TODAY.getMonth() / 3);
+const PLABEL = {
+  tuan: { t: "BÁO CÁO TUẦN", p: `Tuần chứa ${fmtVN(VMP_TODAY)}` },
+  thang: { t: "BÁO CÁO THÁNG", p: `Tháng ${VMP_TODAY.getMonth() + 1}/${VMP_TODAY.getFullYear()}` },
+  quy: { t: "BÁO CÁO QUÝ", p: `Quý ${["I", "II", "III", "IV"][_qNow]}/${VMP_TODAY.getFullYear()}` },
+};
 function download(filename, content, mime) { const blob = new Blob([content], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 1500); }
 function buildReportHTML(period, scopeLabel, e, d, deptRows, overdueList, ai) {
   const pl = PLABEL[period];
@@ -1353,39 +1358,30 @@ function Overview({ acts, setView }) {
 const WL_MONTHS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
 const WL_QUARTERS = ["Quý 1", "Quý 2", "Quý 3", "Quý 4"];
 // ⚙️ NGÀY CÔNG (ước lượng) — chỉnh các con số này cho khớp năng lực thực tế của đội:
-const CAP_MONTH = 10;            // ngưỡng "đầy tải" (ngày công/tháng)
-const CAP_HOSO_MONTH = 3;        // ngưỡng "nhiều hồ sơ" (số hồ sơ phải trả/tháng)
-const CONG_DE_CUONG = 2;         // công viết ĐỀ CƯƠNG cho 1 hạng mục (ngày công)
-// công làm BÁO CÁO theo phân loại báo cáo (vô khuẩn/vi sinh tốn công hơn):
-const CONG_BAO_CAO = { "Vô khuẩn": 4, "Nhiễm khuẩn": 3, "Hóa lý": 2, "Độc lập": 1, "Không phụ thuộc": 1 };
-// công THẨM ĐỊNH thực tế: ưu tiên cột "số ngày công" trên Sheet; trống thì suy theo phân loại:
-const CONG_TD_FALLBACK = { "Vô khuẩn": 5, "Nhiễm khuẩn": 3, "Hóa lý": 2, "Độc lập": 1, "Không phụ thuộc": 1 };
+const CAP_MONTH = 10;            // ngưỡng "đầy tải" (ngày công/tháng) — chỉnh theo năng lực đội
+const CAP_HOSO_MONTH = 3;        // ngưỡng "nhiều hồ sơ"/tháng — chỉnh theo năng lực đội
 
 const wlMonthOf = (a) => { if (!a.target) return -1; const m = Number(String(a.target).split("-")[1]); return (m >= 1 && m <= 12) ? m - 1 : -1; };
-const wlIsDone = (v) => /hoàn thành|hoan thanh|done|đạt|dat|✓|✔|100|xong/i.test(String(v == null ? "" : v));
-const congThamDinh = (a) => { const e = Number(a.effort); return (!isNaN(e) && e > 0) ? e : (CONG_TD_FALLBACK[a.dep] != null ? CONG_TD_FALLBACK[a.dep] : 2); };
-const congBaoCao = (a) => (CONG_BAO_CAO[a.dep] != null ? CONG_BAO_CAO[a.dep] : 2);
+// "Đã xong" 1 pha — XÉT PHỦ ĐỊNH: "chưa hoàn thành" / "không đạt" KHÔNG phải xong.
+const wlIsDone = (v) => { const s = String(v == null ? "" : v).toLowerCase(); const neg = /\b(chưa|chua|không|khong)\b/.test(s) || /^\s*(chưa|chua|không|khong)/.test(s); return !neg && /hoàn thành|hoan thanh|done|đạt|dat|✓|✔|100|xong/.test(s); };
 const wlScore = (a) => { const s = Number(a.score); if (!isNaN(s) && s > 0) return s; return a.crit === "Cao" ? 8 : a.crit === "TB" ? 5 : 2; };
 
-// Các pha CÒN LẠI (chưa xong) của 1 hạng mục chưa chốt VMP.
+// Các pha CÒN LẠI (chưa xong) — đọc TRỰC TIẾP trạng thái từng pha trên Sheet.
 function wlPending(a) {
   if (a.st === "done") return { p: false, v: false, r: false };
-  const raw = a._raw;
-  if (raw && (raw.tt_de_cuong != null || raw.tt_tham_dinh != null || raw.tt_bao_cao != null)) {
-    return { p: !wlIsDone(raw.tt_de_cuong), v: !wlIsDone(raw.tt_tham_dinh), r: !wlIsDone(raw.tt_bao_cao) };
-  }
-  // Dữ liệu demo (không có trạng thái từng pha) → suy theo trạng thái tổng:
-  if (a.st === "prog" || a.st === "over") return { p: false, v: true, r: true };
-  return { p: true, v: true, r: true }; // todo / plan
+  const raw = a._raw || {};
+  return { p: !wlIsDone(raw.tt_de_cuong), v: !wlIsDone(raw.tt_tham_dinh), r: !wlIsDone(raw.tt_bao_cao) };
 }
-// Ngày công CÒN LẠI = tổng công các pha chưa xong (đề cương + thẩm định + báo cáo).
+// Ngày công CÒN LẠI = cột "Số ngày công thẩm định thực tế" (Sheet) nếu thẩm định CHƯA xong
+// và VMP chưa chốt; ngược lại = 0. KHÔNG dùng bất kỳ số ước lượng cứng nào.
 function congConLai(a) {
   if (a.st === "done") return 0;
-  const ph = wlPending(a);
-  return (ph.p ? CONG_DE_CUONG : 0) + (ph.v ? congThamDinh(a) : 0) + (ph.r ? congBaoCao(a) : 0);
+  if (wlIsDone((a._raw || {}).tt_tham_dinh)) return 0;
+  const e = Number(a.effort);
+  return (!isNaN(e) && e > 0) ? e : 0;
 }
-// Hồ sơ (báo cáo) còn phải trả?
-const hoSoConLai = (a) => a.st !== "done" && wlPending(a).r;
+// Hồ sơ (báo cáo) còn phải trả? — theo trạng thái báo cáo trên Sheet.
+const hoSoConLai = (a) => a.st !== "done" && !wlIsDone((a._raw || {}).tt_bao_cao);
 
 function WorkloadView({ acts }) {
   const [scope, setScope] = useState("month");   // month | quarter | year
@@ -1549,7 +1545,7 @@ function WorkloadView({ acts }) {
             </tbody>
           </table>
         </div>
-        <div style={{ marginTop: 12, fontSize: 12, color: C.plumSoft, fontWeight: 600, lineHeight: 1.6 }}>Ngày công còn lại = công các pha <b style={{ color: C.plum }}>chưa xong</b> (đề cương {CONG_DE_CUONG}nc + thẩm định thực tế + báo cáo) của hạng mục <b style={{ color: C.plum }}>chưa chốt VMP</b>; mục đã hoàn thành VMP không tính. Cột <b style={{ color: C.pinkText }}>T6 •</b> = tháng hiện tại.</div>
+        <div style={{ marginTop: 12, fontSize: 12, color: C.plumSoft, fontWeight: 600, lineHeight: 1.6 }}>Ngày công còn lại = cột <b style={{ color: C.pinkText }}>"Số ngày công thẩm định thực tế"</b> trên Google Sheet, tính cho hạng mục <b style={{ color: C.plum }}>chưa thẩm định xong</b> & chưa chốt VMP (đã xong → 0). Hồ sơ còn lại = số báo cáo chưa hoàn thành. Cột <b style={{ color: C.pinkText }}>T6 •</b> = tháng hiện tại.</div>
       </Card>
 
       {/* Distribution + Focus */}
@@ -1608,9 +1604,9 @@ function WorkloadDetailModal({ detail, onClose }) {
               </div>
               <div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 600, marginBottom: 9 }}>{a.code} · {a.owner} · đích {a.target ? fmtVN(parseD(a.target)) : "—"} · còn <b style={{ color: C.lavText }}>{congConLai(a)} nc</b></div>
               <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                <PhaseChip label="Đề cương" done={!ph.p} cong={CONG_DE_CUONG} />
-                <PhaseChip label="Thẩm định" done={!ph.v} cong={congThamDinh(a)} />
-                <PhaseChip label="Báo cáo" done={!ph.r} cong={congBaoCao(a)} />
+                <PhaseChip label="Đề cương" done={!ph.p} />
+                <PhaseChip label="Thẩm định" done={!ph.v} cong={Number(a.effort) > 0 ? Number(a.effort) : null} />
+                <PhaseChip label="Báo cáo" done={!ph.r} />
               </div>
             </div>
           );
