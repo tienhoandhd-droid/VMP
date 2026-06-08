@@ -1372,11 +1372,10 @@ function wlPending(a) {
   const raw = a._raw || {};
   return { p: !wlIsDone(raw.tt_de_cuong), v: !wlIsDone(raw.tt_tham_dinh), r: !wlIsDone(raw.tt_bao_cao) };
 }
-// Ngày công CÒN LẠI = cột "Số ngày công thẩm định thực tế" (Sheet) nếu thẩm định CHƯA xong
-// và VMP chưa chốt; ngược lại = 0. KHÔNG dùng bất kỳ số ước lượng cứng nào.
+// Ngày công CÒN LẠI = đúng cột "Số ngày công thẩm định thực tế" (cố định mỗi mã trên Sheet),
+// tính cho MỌI hạng mục chưa chốt VMP. Đã chốt VMP → 0. KHÔNG ước lượng, KHÔNG trừ theo pha.
 function congConLai(a) {
   if (a.st === "done") return 0;
-  if (wlIsDone((a._raw || {}).tt_tham_dinh)) return 0;
   const e = Number(a.effort);
   return (!isNaN(e) && e > 0) ? e : 0;
 }
@@ -1461,6 +1460,17 @@ function WorkloadView({ acts }) {
           <div><div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 800, marginBottom: 7 }}>MA TRẬN TÔ THEO</div><div style={{ display: "flex", gap: 7 }}><Btn on={metric === "cong"} onClick={() => setMetric("cong")}>Ngày công</Btn><Btn on={metric === "hoso"} onClick={() => setMetric("hoso")}>Hồ sơ</Btn></div></div>
         </div>
       </Card>
+
+      {!acts.some((a) => Number(a.effort) > 0) && (
+        <Card variant="strong" style={{ background: C.marigoldSoft, border: `1.5px solid ${C.marigold}` }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <AlertCircle size={22} color={C.marigoldText} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div style={{ fontFamily: TEXT, fontSize: 13.5, color: C.plum, fontWeight: 700, lineHeight: 1.6 }}>
+              Chưa đọc được <b>"Số ngày công thẩm định thực tế"</b> từ Google Sheet (tất cả đang = 0). Kiểm tra nhanh: (1) đã <b>dán lại node Code mới</b> trong n8n và Save chưa? (2) cột này trên Sheet đã có <b>số (vd 1–5)</b> ở các dòng chưa? (3) tải lại trang & bấm <b>Làm mới</b>. Khi đọc được, ô này sẽ tự ẩn.
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Capacity cards */}
       <Card variant="strong">
