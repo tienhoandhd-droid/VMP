@@ -192,4 +192,24 @@ Nếu Sheet của bạn dùng giá trị khác (vd phân loại ghi "Equipment" 
 
 ---
 
+## 9. Phân quyền 3 tầng & nhập liệu trên web
+
+App phân quyền theo đúng 3 tầng dữ liệu:
+
+| Tầng | Cột trong Sheet | Ai sửa được | Ở đâu trên web |
+|---|---|---|---|
+| **Gốc** | Định danh + Lập lịch + Phân công + Deadline VMP (T) | **Chỉ admin** | Mục "Danh mục đối tượng" (nút Thêm/Sửa/Xoá chỉ hiện với admin) |
+| **Dashboard** | 9 ô thực thi: ngày & trạng thái (đề cương / thẩm định / báo cáo / VMP) + lịch thẩm định | **Mọi tài khoản** | Mục "Cập nhật tiến độ" → nút *Cập nhật* mở form |
+| **Tự nhảy** | Deadline đề cương (T-60), thẩm định (T-5-BC), báo cáo (T-5) | Không ai (công thức) | Hiện **chỉ đọc** trong form cập nhật |
+
+Khi lưu form, app gửi **đủ 9 trường** (điền sẵn giá trị hiện có) qua `updateRow` để n8n không ghi rỗng đè lên ô chưa sửa. Mỗi cập nhật kèm tên người sửa (trường `user`).
+
+**Tài khoản demo** (sửa trong `USERS` ở `src/App.jsx`): `hoan|my|nhi / *@123` là admin (V/Q Team, quản lý mục gốc); `bophan / bp@123` chỉ nhập tiến độ dashboard. Mật khẩu không lưu vào localStorage.
+
+**2 cột gốc mới** (app tự đọc qua n8n): *Số ngày công thẩm định thực tế* (1–5, dùng cân đối tải) và *Điểm trọng yếu* (1–9 → Cao/TB/Thấp cho view QRM). Đã thêm vào node Code đọc của workflow — nhớ **re-import** `n8n/VMP-workflow.json`.
+
+> **Khóa cứng "chỉ admin sửa mục gốc":** app chỉ ẩn/hiện nút theo quyền (mềm). Lớp chặn thật nằm ở **Google Sheet**: đặt *protected ranges* cho các cột gốc, chỉ chia sẻ quyền sửa cho tài khoản QA — webhook không xác thực người dùng được.
+
+---
+
 *✨ VMP Monitor · CPC1 HN · V/Q Team — QLCL · EU GMP Annex 15 · WHO · PIC/S ✨*

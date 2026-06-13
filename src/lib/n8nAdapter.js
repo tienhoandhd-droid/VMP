@@ -203,8 +203,9 @@ export function adaptFromN8n(payload) {
     });
   }
 
-  // Bỏ các hạng mục thiếu ngày đích (không vẽ được trên timeline).
-  const acts = activities.filter((a) => a.target);
+  // Giữ TẤT CẢ hạng mục (kể cả chưa có deadline) — đánh dấu thiếu deadline.
+  // Trước đây: activities.filter((a) => a.target) — bỏ mất hạng mục chưa điền deadline!
+  const acts = activities;
 
   return {
     objects: Array.from(objMap.values()),

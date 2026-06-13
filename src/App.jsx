@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { loadConn, saveConn, clearConn, loadUser, saveUser } from "./lib/config.js";
 import { fetchVmpData, postToN8n, buildPing, buildUpdateRow, toISO, deriveActivityFields } from "./lib/n8nAdapter.js";
+import { supabase, isSupabaseConfigured, signIn, signOut, getSession, changePassword, writeAuditLog, getAccessToken } from "./lib/supabaseClient.js";
+import * as XLSX from "xlsx";
 
 /* ===================== Palette — Magical Pastel · Hồng (đã tăng tương phản) ===================== */
 const C = {
@@ -72,17 +74,15 @@ const DEPT_COLOR = { sx: C.pink, cd: C.sky, kho: C.marigold, qc: C.mint, qa: C.l
 const DEPT_CODE = { sx: "SX", cd: "CĐ", kho: "Kho", qc: "QC", qa: "QA" };
 const DEP_DAYS = { "Độc lập": 2, "Hóa lý": 2, "Nhiễm khuẩn": 7, "Vô khuẩn": 16 };
 
-// ===== Dữ liệu demo đã được GỠ BỎ — ứng dụng chỉ dùng dữ liệu thật từ Google Sheet (qua n8n). =====
+// ===== Auth: Ưu tiên Supabase Auth. Nếu chưa cấu hình → dùng biến môi trường (KHÔNG hard-code). =====
+// Để cấu hình Supabase: đặt VITE_SUPABASE_URL + VITE_SUPABASE_ANON trong GitHub Variables.
+// Nếu chưa có Supabase, tạo user tạm bằng VITE_TEMP_ADMIN_PASS (sẽ bị xoá khi có Supabase).
+const TEMP_PASS = import.meta.env.VITE_TEMP_ADMIN_PASS || "";
+const LOCAL_USERS = TEMP_PASS ? {
+  admin: { pass: TEMP_PASS, name: "Admin (tạm)", role: "V/Q Team", perm: "admin" },
+} : {};
 const SEED_OBJ = [];
 const SEED_ACT = [];
-// Tài khoản đăng nhập (mật khẩu demo — hãy đổi qua chức năng "Đổi mật khẩu").
-const USERS = {
-  admin: { pass: "admin@123", name: "Quản trị hệ thống", role: "Admin", perm: "admin" },
-  hoan: { pass: "hoan@123", name: "Hoàn", role: "V/Q Team — QLCL", perm: "admin" },
-  my: { pass: "my@123", name: "My", role: "V/Q Team — QLCL", perm: "admin" },
-  nhi: { pass: "nhi@123", name: "Nhi", role: "V/Q Team — QLCL", perm: "admin" },
-  bophan: { pass: "bp@123", name: "NV Bộ phận", role: "XSX / Kho / RD / Cơ điện", perm: "edit" },
-};
 const PERM_LABEL = { admin: "Quản trị", edit: "Chỉnh sửa", view: "Chỉ xem" };
 /* ===================== Helpers (khôi phục) ===================== */
 const parseD = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
@@ -96,6 +96,7 @@ const PROG = { done: 100, prog: 55, over: 75, todo: 20, plan: 8 };
 
 function milestones(act) {
   const T = parseD(act.target);
+  if (!T) return { protocol: null, validation: null, report: null, target: null };
   const dep = DEP_DAYS[act.dep] != null ? DEP_DAYS[act.dep] : 2;
   return { protocol: addDays(T, -60), validation: addDays(T, -5 - dep), report: addDays(T, -5), target: T };
 }
@@ -109,11 +110,12 @@ function phaseStates(act) {
   return { p: "future", v: "future", r: "future", m };
 }
 function nextAlert(act) {
+  if (act.st === "done" || !act.target) return null;
   const m = milestones(act);
-  if (act.st === "done") return null;
   let stage, date;
   if (act.st === "over" || act.st === "prog") { stage = "Thẩm định"; date = m.validation; }
   else { stage = "Đề cương"; date = m.protocol; }
+  if (!date) return null;
   const dleft = daysBetween(date, VMP_TODAY);
   let kind = null; if (dleft < 0) kind = "over"; else if (dleft <= SOON_DAYS) kind = "soon";
   return { stage, date, dleft, kind };
@@ -137,8 +139,17 @@ function tally(acts) {
   return { done, over, todo: acts.length - done - over, total: acts.length, rate: acts.length ? Math.round((done / acts.length) * 100) : 0 };
 }
 function docTally(acts) {
-  const done = acts.filter((a) => a.st === "done" && a.docDone).length;
-  const over = acts.filter((a) => a.st === "over").length;
+  // Hồ sơ "done" = ĐỀ CƯƠNG done VÀ BÁO CÁO done (không phụ thuộc VMP chốt).
+  const _isDone = (v) => { const s = String(v == null ? "" : v).toLowerCase(); const neg = /\b(chưa|chua|không|khong)\b/.test(s); return !neg && /hoàn thành|hoan thanh|done|đạt|dat|✓|✔|100|xong/.test(s); };
+  const isDcDone = (a) => { const r = a._raw || {}; return _isDone(r.tt_de_cuong) && _isDone(r.tt_bao_cao); };
+  const done = acts.filter(isDcDone).length;
+  // Hồ sơ "quá hạn" = deadline báo cáo đã qua mà hồ sơ chưa done.
+  const over = acts.filter((a) => {
+    if (isDcDone(a)) return false;
+    const r = a._raw || {};
+    const dlBc = parseD(r.dl_bao_cao || "") || parseD(r.dl_vmp || "");
+    return dlBc && dlBc < VMP_TODAY;
+  }).length;
   const total = acts.length;
   return { done, over, todo: total - done - over, total, rate: total ? Math.round((done / total) * 100) : 0 };
 }
@@ -236,9 +247,24 @@ function Modal({ onClose, title, icon: Icon, children, wide }) {
 }
 
 /* ===================== Login ===================== */
-function LoginScreen({ users, onLogin }) {
-  const [u, setU] = useState(""); const [p, setP] = useState(""); const [err, setErr] = useState(""); const [show, setShow] = useState(false);
-  const submit = () => { const rec = users[u.trim().toLowerCase()]; if (rec && rec.pass === p) onLogin({ key: u.trim().toLowerCase(), ...rec }); else setErr("Sai tài khoản hoặc mật khẩu."); };
+function LoginScreen({ onLogin }) {
+  const [u, setU] = useState(""); const [p, setP] = useState(""); const [err, setErr] = useState(""); const [show, setShow] = useState(false); const [loading, setLoading] = useState(false);
+  const useSupa = isSupabaseConfigured();
+  const submit = async () => {
+    setErr(""); setLoading(true);
+    try {
+      if (useSupa) {
+        const profile = await signIn(u.trim(), p);
+        onLogin(profile);
+      } else {
+        // Fallback: dùng LOCAL_USERS (từ biến môi trường, KHÔNG hard-code)
+        const rec = LOCAL_USERS[u.trim().toLowerCase()];
+        if (rec && rec.pass === p) onLogin({ key: u.trim().toLowerCase(), ...rec });
+        else setErr("Sai tài khoản hoặc mật khẩu.");
+      }
+    } catch (e) { setErr(e.message || "Đăng nhập thất bại."); }
+    setLoading(false);
+  };
   const field = (icon, props, right) => (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", borderRadius: 16, background: "#fff", border: `1.5px solid ${C.pinkSoft}` }}>
       {icon}<input {...props} onKeyDown={(e) => e.key === "Enter" && submit()} style={{ border: "none", outline: "none", background: "transparent", fontFamily: TEXT, fontSize: 14.5, color: C.plum, width: "100%", fontWeight: 600 }} />{right}
@@ -250,7 +276,6 @@ function LoginScreen({ users, onLogin }) {
       <div style={{ width: "100%", maxWidth: 900, display: "grid", gridTemplateColumns: "1fr 1fr", borderRadius: 30, overflow: "hidden", boxShadow: "0 24px 60px rgba(238,123,169,.28)" }} className="login-grid">
         <div style={{ background: GRAD, padding: "44px 40px", color: "#fff", position: "relative", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "center", textAlign: "center" }}>
           <div style={{ position: "absolute", top: 20, right: 26 }}><Sparkle size={20} color="#fff" style={{ opacity: .85 }} /></div>
-          <div style={{ position: "absolute", bottom: 30, left: 26 }}><Sparkle size={14} color="#fff" style={{ opacity: .75 }} /></div>
           <div style={{ width: 56, height: 56, borderRadius: 18, background: "rgba(255,255,255,.24)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>👑</div>
           <Mascot mood="happy" size={170} />
           <div>
@@ -260,36 +285,43 @@ function LoginScreen({ users, onLogin }) {
         </div>
         <div style={{ background: C.pinkMist, padding: "48px 40px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <div style={{ fontFamily: TEXT, fontSize: 24, fontWeight: 800, color: C.plum }}>Xin chào! ✨</div>
-          <div style={{ fontSize: 13.5, color: C.plumSoft, marginTop: 5, marginBottom: 22, fontWeight: 700 }}>Đăng nhập để bắt đầu nào</div>
+          <div style={{ fontSize: 13.5, color: C.plumSoft, marginTop: 5, marginBottom: 22, fontWeight: 700 }}>{useSupa ? "Đăng nhập bằng email Supabase" : "Đăng nhập để bắt đầu"}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {field(<Boxes size={18} color={C.pink} />, { placeholder: "Tài khoản", value: u, onChange: (e) => { setU(e.target.value); setErr(""); } })}
+            {field(<Boxes size={18} color={C.pink} />, { placeholder: useSupa ? "Email" : "Tài khoản", value: u, onChange: (e) => { setU(e.target.value); setErr(""); } })}
             {field(<Lock size={18} color={C.pink} />, { placeholder: "Mật khẩu", type: show ? "text" : "password", value: p, onChange: (e) => { setP(e.target.value); setErr(""); } }, <button onClick={() => setShow(!show)} style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex" }}>{show ? <EyeOff size={17} color={C.plumSoft} /> : <Eye size={17} color={C.plumSoft} />}</button>)}
             {err && <div style={{ color: C.raspText, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}><XCircle size={15} /> {err}</div>}
-            <button onClick={submit} style={{ ...btnPrimary, marginTop: 4, padding: "14px", borderRadius: 16, fontSize: 15, boxShadow: "0 8px 20px rgba(190,69,116,.35)" }}>Đăng nhập</button>
+            <button onClick={submit} disabled={loading} style={{ ...btnPrimary, marginTop: 4, padding: "14px", borderRadius: 16, fontSize: 15, boxShadow: "0 8px 20px rgba(190,69,116,.35)", opacity: loading ? .7 : 1 }}>{loading ? "Đang đăng nhập…" : "Đăng nhập"}</button>
           </div>
-          <div style={{ marginTop: 22, padding: "13px 15px", borderRadius: 14, background: "#fff", border: `1.5px solid ${C.pinkSoft}`, fontSize: 11.5, color: C.plumSoft, lineHeight: 1.7, fontWeight: 600 }}><b style={{ color: C.pinkText }}>Tài khoản demo:</b><br /><code>hoan / hoan@123</code> (admin — sửa được mục gốc)<br /><code>bophan / bp@123</code> (chỉ nhập tiến độ dashboard)</div>
+          {useSupa ? (
+            <div style={{ marginTop: 18, padding: "12px 15px", borderRadius: 14, background: C.mintSoft, fontSize: 12, color: C.mintText, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><ShieldCheck size={15} /> Xác thực qua Supabase · Mật khẩu được mã hoá · Audit log bật</div>
+          ) : (
+            <div style={{ marginTop: 18, padding: "12px 15px", borderRadius: 14, background: C.marigoldSoft, fontSize: 12, color: C.marigoldText, fontWeight: 700 }}>⚠️ Chế độ tạm (chưa có Supabase). Xem hướng dẫn cài đặt để nâng cấp bảo mật.</div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-function ChangePwModal({ user, users, setUsers, onClose }) {
-  const [oldp, setOld] = useState(""); const [np, setNp] = useState(""); const [cf, setCf] = useState(""); const [msg, setMsg] = useState({ type: "", text: "" });
-  const submit = () => {
-    const cur = users[user.key].pass;
-    if (oldp !== cur) return setMsg({ type: "err", text: "Mật khẩu cũ không đúng." });
+function ChangePwModal({ user, onClose }) {
+  const [np, setNp] = useState(""); const [cf, setCf] = useState(""); const [msg, setMsg] = useState({ type: "", text: "" }); const [loading, setLoading] = useState(false);
+  const useSupa = isSupabaseConfigured();
+  const submit = async () => {
     if (np.length < 6) return setMsg({ type: "err", text: "Mật khẩu mới tối thiểu 6 ký tự." });
     if (np !== cf) return setMsg({ type: "err", text: "Xác nhận mật khẩu không khớp." });
-    if (np === oldp) return setMsg({ type: "err", text: "Mật khẩu mới phải khác mật khẩu cũ." });
-    setUsers({ ...users, [user.key]: { ...users[user.key], pass: np } }); setMsg({ type: "ok", text: "Đổi mật khẩu thành công!" }); setOld(""); setNp(""); setCf("");
+    if (useSupa) {
+      setLoading(true);
+      try { await changePassword(np); setMsg({ type: "ok", text: "Đổi mật khẩu thành công!" }); setNp(""); setCf(""); }
+      catch (e) { setMsg({ type: "err", text: e.message || "Lỗi đổi mật khẩu." }); }
+      setLoading(false);
+    } else { setMsg({ type: "err", text: "Chưa cấu hình Supabase — không đổi được mật khẩu." }); }
   };
   const inp = (ph, val, set) => <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px", borderRadius: 14, background: "#fff", border: `1.5px solid ${C.pinkSoft}` }}><KeyRound size={16} color={C.pink} /><input type="password" placeholder={ph} value={val} onChange={(e) => { set(e.target.value); setMsg({ type: "", text: "" }); }} style={{ border: "none", outline: "none", background: "transparent", fontFamily: TEXT, fontSize: 14, color: C.plum, width: "100%", fontWeight: 600 }} /></div>;
   return (
     <Modal onClose={onClose} title="Đổi mật khẩu" icon={KeyRound}>
       <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-        {inp("Mật khẩu cũ", oldp, setOld)}{inp("Mật khẩu mới (≥ 6 ký tự)", np, setNp)}{inp("Xác nhận mật khẩu mới", cf, setCf)}
+        {inp("Mật khẩu mới (≥ 6 ký tự)", np, setNp)}{inp("Xác nhận mật khẩu mới", cf, setCf)}
         {msg.text && <div style={{ fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 6, color: msg.type === "ok" ? C.mintText : C.raspText }}>{msg.type === "ok" ? <CheckCircle2 size={15} /> : <XCircle size={15} />} {msg.text}</div>}
-        <button onClick={submit} style={{ ...btnPrimary, marginTop: 4, padding: "13px", borderRadius: 14, fontSize: 14.5 }}>Xác nhận</button>
+        <button onClick={submit} disabled={loading} style={{ ...btnPrimary, marginTop: 4, padding: "13px", borderRadius: 14, fontSize: 14.5 }}>{loading ? "Đang lưu…" : "Xác nhận"}</button>
       </div>
     </Modal>
   );
@@ -550,6 +582,7 @@ function GanttRow({ a, idx, onOpen }) {
 function TimelineView({ acts }) {
   const [cls, setCls] = useState("all"); const [dept, setDept] = useState("all"); const [q, setQ] = useState(""); const [detail, setDetail] = useState(null);
   const filtered = acts.filter((a) => {
+    if (!a.target) return false; // Không có deadline → không vẽ được trên timeline
     if (cls !== "all" && a.cls !== cls) return false;
     if (dept !== "all" && a.dept !== dept) return false;
     if (q.trim()) { const s = q.trim().toLowerCase(); if (![a.code, a.name, a.owner, a.id, a.vtype].some((x) => String(x || "").toLowerCase().includes(s))) return false; }
@@ -1175,7 +1208,10 @@ ${ovStr}`;
       <Card variant="strong">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ background: C.pinkText, color: "#fff", fontWeight: 800, borderRadius: 10, padding: "8px 12px", fontSize: 12.5 }}>CPC1 HN</span><div><div style={{ fontFamily: TEXT, fontSize: 19, fontWeight: 800, color: C.plum }}>{pl.t} — Tiến độ Thẩm định</div><div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 700 }}>{pl.p} · {scopeLabel}</div></div></div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><ExpBtn icon={Printer} label="Xuất PDF" onClick={printPDF} bg={GRAD} color="#fff" /><ExpBtn icon={Download} label="Tải .DOC" onClick={() => download(`BaoCao_${period}_CPC1HN.doc`, html(), "application/msword")} bg={C.lavSoft} color={C.lavText} /><ExpBtn icon={Download} label="Tải .HTML" onClick={() => download(`BaoCao_${period}_CPC1HN.html`, html(), "text/html")} bg={C.mintSoft} color={C.mintText} /></div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><ExpBtn icon={Printer} label="Xuất PDF" onClick={printPDF} bg={GRAD} color="#fff" /><ExpBtn icon={Download} label="Excel (.xlsx)" onClick={() => {
+            const wsData = [["Nhóm", "Hoàn thành", "Quá hạn", "Chưa HT", "Tổng", "Tỷ lệ (%)"], ["Thẩm định thực tế", e.done, e.over, e.todo, e.total, e.rate], ["Hoàn thiện hồ sơ", d.done, d.over, d.todo, d.total, d.rate], [], ["Bộ phận", "Hoàn thành", "Quá hạn", "Chưa HT", "Tổng", "Tỷ lệ (%)"], ...deptRows.map((r) => [r.name, r.done, r.over, r.todo, r.total, r.rate]), [], ["Hạng mục quá hạn", "Tên", "Mốc", "Trễ (ngày)"], ...overdueList.map((o) => [o.id, o.name, o.stage, Math.abs(o.dleft)])];
+            const ws = XLSX.utils.aoa_to_sheet(wsData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Báo cáo"); const detailData = [["Mã", "Tên", "Loại TD", "Bộ phận", "QA", "Điểm TY", "Ngày công", "Trạng thái", "Deadline VMP", "TT Đề cương", "TT Thẩm định", "TT Báo cáo", "TT VMP"], ...scoped.map((a) => [a.code, a.name, a.vtype, a.dept, a.owner, a.score, a.effort, a.st, a._raw?.dl_vmp, a._raw?.tt_de_cuong, a._raw?.tt_tham_dinh, a._raw?.tt_bao_cao, a._raw?.tt_vmp])]; const ws2 = XLSX.utils.aoa_to_sheet(detailData); XLSX.utils.book_append_sheet(wb, ws2, "Chi tiết"); XLSX.writeFile(wb, `VMP_BaoCao_${period}_CPC1HN.xlsx`);
+          }} bg={C.mintSoft} color={C.mintText} /><ExpBtn icon={Download} label="Tải .HTML" onClick={() => download(`BaoCao_${period}_CPC1HN.html`, html(), "text/html")} bg={C.lavSoft} color={C.lavText} /></div>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: TEXT, marginBottom: 6 }}><thead><tr>{["Nhóm theo dõi", "Hoàn thành", "Quá hạn", "Chưa HT", "Tổng", "Tỷ lệ"].map((h, i) => <th key={i} style={{ textAlign: i === 0 ? "left" : "center", fontSize: 11, color: C.plumSoft, fontWeight: 800, letterSpacing: 0.5, padding: "0 13px 13px", textTransform: "uppercase" }}>{h}</th>)}</tr></thead><tbody>{statRow("Thẩm định thực tế", e, C.mint)}{statRow("Hoàn thiện hồ sơ", d, C.sky)}</tbody></table>
         <div style={{ marginTop: 20 }}>
@@ -1741,7 +1777,6 @@ const SUBS = {
   connect: "Kết nối & đồng bộ dữ liệu 2 chiều với Google Sheet",
 };
 export default function App() {
-  const [users, setUsers] = useState(USERS);
   const [user, setUser] = useState(() => loadUser());
   const [view, setView] = useState("overview");
   const [showPw, setShowPw] = useState(false);
@@ -1758,7 +1793,14 @@ export default function App() {
   // Nạp font pastel
   useEffect(() => { const id = "pastel-fonts"; if (!document.getElementById(id)) { const l = document.createElement("link"); l.id = id; l.rel = "stylesheet"; l.href = "https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Quicksand:wght@400;500;600;700&display=swap"; document.head.appendChild(l); } }, []);
 
-  // Ghi nhớ phiên đăng nhập (KHÔNG lưu mật khẩu)
+  // Supabase: khôi phục session khi mở trang
+  useEffect(() => {
+    if (isSupabaseConfigured() && !user) {
+      getSession().then((s) => { if (s) { setUser(s); saveUser(s); } });
+    }
+  }, []); // eslint-disable-line
+
+  // Ghi nhớ phiên đăng nhập
   useEffect(() => { saveUser(user); }, [user]);
 
   // Cuộn nội dung về đầu trang mỗi khi chuyển mục (chức năng).
@@ -1868,20 +1910,17 @@ export default function App() {
     `}</style>
   );
 
-  if (!user) return (<>{styleTag}<LoginScreen users={users} onLogin={setUser} /></>);
+  if (!user) return (<>{styleTag}<LoginScreen onLogin={(u) => { setUser(u); saveUser(u); }} /></>);
   const title = NAV.find((n) => n.id === view)?.label || "Tổng quan";
-  // PHÂN QUYỀN 3 TẦNG:
-  //  • Mục GỐC (danh mục/định danh)  → chỉ admin được sửa
-  //  • Mục DASHBOARD (nhập tiến độ)   → mọi tài khoản đăng nhập đều sửa được
-  //  • Mục TỰ NHẢY (deadline tự tính) → chỉ đọc (công thức), không ai sửa tay
   const isAdmin = user.perm === "admin";
+  const handleLogout = async () => { if (isSupabaseConfigured()) await signOut(); setUser(null); saveUser(null); setView("overview"); };
   const stars = [{ t: "10%", l: "30%", s: 14, c: C.gold, d: "0s" }, { t: "24%", l: "92%", s: 12, c: C.pink, d: ".8s" }, { t: "55%", l: "96%", s: 16, c: C.lav, d: "1.4s" }, { t: "82%", l: "34%", s: 12, c: C.sky, d: ".5s" }, { t: "68%", l: "8%", s: 13, c: C.pink, d: "1.1s" }];
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: TEXT, color: C.plum, overflow: "hidden" }}>
       {styleTag}
-      {showPw && <ChangePwModal user={user} users={users} setUsers={setUsers} onClose={() => setShowPw(false)} />}
-      <Sidebar view={view} setView={setView} user={user} connected={conn.status === "ok"} onLogout={() => { setUser(null); setView("overview"); }} onChangePw={() => setShowPw(true)} />
+      {showPw && <ChangePwModal user={user} onClose={() => setShowPw(false)} />}
+      <Sidebar view={view} setView={setView} user={user} connected={conn.status === "ok"} onLogout={handleLogout} onChangePw={() => setShowPw(true)} />
       <main ref={mainRef} className="vmp-scroll" style={{ flex: 1, overflowY: "auto", position: "relative", background: `radial-gradient(720px 520px at 88% -6%, ${C.pinkMist}, transparent 60%), radial-gradient(640px 520px at -6% 104%, ${C.lavSoft}, transparent 55%), radial-gradient(520px 420px at 50% 55%, rgba(226,241,250,.45), transparent 70%), linear-gradient(160deg, ${C.bg1}, ${C.bg2})` }}>
         {stars.map((s, i) => <div key={i} className="tw" style={{ position: "absolute", top: s.t, left: s.l, animationDelay: s.d }}><Sparkle size={s.s} color={s.c} /></div>)}
         <div style={{ position: "relative", zIndex: 1 }}>
