@@ -248,15 +248,43 @@ export function buildUpdateRow(id, patch, user) {
   };
 }
 
-/* ---------- Gọi mạng (fetch) có xử lý lỗi gọn ---------- */
-export async function fetchVmpData(readUrl) {
-  // cache:"no-store" + tham số thời gian → mỗi lần Làm mới/tải lại luôn lấy
-  // bản MỚI NHẤT từ Google Sheet, không bị trình duyệt/CDN trả bản cũ.
+/* ---------- Cache thông minh — giảm tải webhook khi 10 người dùng đồng thời ----------
+ *  Lưu kết quả vào localStorage với TTL 2 phút. Khi bấm "Làm mới" → force=true bỏ cache.
+ *  10 người mở cùng lúc: chỉ 1 request thật, 9 người còn lại lấy cache → nhanh + nhẹ.
+ */
+const CACHE_KEY = "vmp_cache";
+const CACHE_TTL = 2 * 60 * 1000; // 2 phút
+
+function getCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) { localStorage.removeItem(CACHE_KEY); return null; }
+    return data;
+  } catch { return null; }
+}
+function setCache(data) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch { /* quota full */ }
+}
+
+export async function fetchVmpData(readUrl, force = false) {
+  // Cache: trả dữ liệu cũ nếu còn hạn + không bấm "Làm mới"
+  if (!force) { const cached = getCache(); if (cached) return cached; }
+
+  // Gọi webhook thật (cache-bust để n8n/CDN trả bản mới nhất)
   const bust = (readUrl.includes("?") ? "&" : "?") + "_t=" + Date.now();
   const res = await fetch(readUrl + bust, { method: "GET", cache: "no-store" });
   if (!res.ok) throw new Error("HTTP " + res.status);
   const json = await res.json();
-  return adaptFromN8n(json);
+  const result = adaptFromN8n(json);
+  setCache(result); // Lưu cache cho lần sau
+  return result;
+}
+
+// Xoá cache (khi logout hoặc đổi kết nối)
+export function clearVmpCache() {
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
 }
 
 // Dùng text/plain để tránh CORS preflight (OPTIONS) với webhook n8n.

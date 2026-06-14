@@ -1,4 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+
+/* ===================== Performance: Debounce hook ===================== */
+function useDebounce(value, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => { const t = setTimeout(() => setDebounced(value), delay); return () => clearTimeout(t); }, [value, delay]);
+  return debounced;
+}
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, ReferenceLine } from "recharts";
 import {
   LayoutDashboard, Boxes, FlaskConical, Cpu, CalendarClock, FileBarChart,
@@ -8,7 +15,7 @@ import {
   GanttChartSquare, Radar, Cloud, Link2, Pencil, Trash2, Save, Warehouse, Wind, Truck, FileText,
 } from "lucide-react";
 import { loadConn, saveConn, clearConn, loadUser, saveUser } from "./lib/config.js";
-import { fetchVmpData, postToN8n, buildPing, buildUpdateRow, toISO, deriveActivityFields } from "./lib/n8nAdapter.js";
+import { fetchVmpData, postToN8n, buildPing, buildUpdateRow, toISO, deriveActivityFields, clearVmpCache } from "./lib/n8nAdapter.js";
 import { supabase, isSupabaseConfigured, signIn, signOut, getSession, changePassword, writeAuditLog, getAccessToken } from "./lib/supabaseClient.js";
 import * as XLSX from "xlsx";
 
@@ -379,79 +386,6 @@ function Topbar({ title, user, sub, onRefresh, refreshing }) {
   );
 }
 
-/* ===================== Track Card ===================== */
-function TrackCard({ label, desc, tColor, tText, m, note, noteColor, noteBg, NoteIcon }) {
-  const segs = [{ value: m.done, color: MST.done.color }, { value: m.over, color: MST.over.color }, { value: m.todo, color: MST.todo.color }];
-  const rows = [{ k: "done", n: m.done }, { k: "over", n: m.over }, { k: "todo", n: m.todo }];
-  return (
-    <Card variant="strong">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}><div><div style={{ fontFamily: TEXT, fontSize: 17, fontWeight: 800, color: C.plum }}>{label}</div><div style={{ fontFamily: TEXT, fontSize: 12.5, color: C.plumSoft, marginTop: 2, fontWeight: 600 }}>{desc}</div></div><Tag color={tText} bg={tColor + "1f"}>{m.total} hạng mục</Tag></div>
-      <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 8 }}>
-        <div style={{ position: "relative", flexShrink: 0 }}><Donut segments={segs} /><div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><div style={{ fontFamily: NUM, fontSize: 34, fontWeight: 800, color: C.plum, lineHeight: 1 }}>{m.rate}%</div><div style={{ fontFamily: TEXT, fontSize: 11.5, color: C.plumSoft, fontWeight: 700 }}>hoàn thành</div></div></div>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
-          {rows.map((r) => { const meta = MST[r.k]; const pct = m.total ? Math.round((r.n / m.total) * 100) : 0; return (
-            <div key={r.k}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}><span style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: TEXT, fontSize: 12.5, color: C.plum, fontWeight: 700 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: meta.color }} />{meta.label}</span><span style={{ fontFamily: TEXT, fontSize: 13, color: C.plum, fontWeight: 700 }}><b style={{ fontFamily: NUM, fontSize: 15 }}>{r.n}</b> · {pct}%</span></div>
-              <div style={{ height: 7, borderRadius: 999, background: C.pinkSoft, overflow: "hidden" }}><div style={{ height: "100%", width: pct + "%", background: meta.color, borderRadius: 999, transition: "width .9s ease" }} /></div>
-            </div>
-          ); })}
-        </div>
-      </div>
-      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 14, fontFamily: TEXT, fontSize: 13, fontWeight: 800, background: noteBg, color: noteColor }}><NoteIcon size={15} />{note}</div>
-    </Card>
-  );
-}
-
-/* ===================== Dept race ===================== */
-function rankRing(rank) { return rank === 1 ? C.gold : rank === 2 ? C.silver : rank === 3 ? C.bronze : "#D9A9CC"; }
-function RankBadge({ rank }) {
-  const medals = ["🥇", "🥈", "🥉"];
-  if (rank <= 3) return <span style={{ fontSize: 21, width: 28, textAlign: "center" }}>{medals[rank - 1]}</span>;
-  return <span style={{ width: 28, textAlign: "center", fontFamily: NUM, fontWeight: 800, fontSize: 15, color: C.plumSoft }}>{rank}</span>;
-}
-function DeptRace({ acts }) {
-  const rows = DEPTS.map((dp) => ({ id: dp.id, name: dp.name, ...tally(acts.filter((a) => a.dept === dp.id)) }))
-    .filter((r) => r.total > 0).sort((a, b) => b.rate - a.rate || b.done - a.done);
-  if (!rows.length) return null;
-  const leader = rows[0], laggard = rows[rows.length - 1], totalOver = sum(rows.map((r) => r.over));
-  return (
-    <Card variant="strong">
-      <CardTitle icon={Trophy} sub="🏁 Về đích = 100% hoàn thành các hạng mục VMP 2026 của bộ phận">Đường đua tiến độ theo bộ phận</CardTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {rows.map((r, idx) => {
-          const rank = idx + 1, ring = rankRing(rank), deep = DEPT_DEEP[r.id], col = DEPT_COLOR[r.id];
-          return (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <RankBadge rank={rank} />
-              <div style={{ width: 92, flexShrink: 0 }}><div style={{ fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.plum, lineHeight: 1.15 }}>{r.name}</div></div>
-              <div style={{ flex: 1, position: "relative", height: 44, minWidth: 130 }}>
-                <div style={{ position: "absolute", top: "50%", transform: "translateY(-50%)", left: 0, right: 0, height: 13, borderRadius: 999, background: C.pinkSoft, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: r.rate + "%", background: col, borderRadius: 999, transition: "width 1s cubic-bezier(.22,1,.36,1)" }} />
-                </div>
-                <div style={{ position: "absolute", top: "50%", left: `${r.rate}%`, transform: "translate(-50%,-50%)", transition: "left 1s cubic-bezier(.22,1,.36,1)", zIndex: 2 }}>
-                  {rank === 1 && <div style={{ position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)", fontSize: 15 }}>👑</div>}
-                  <div style={{ width: 34, height: 34, borderRadius: 999, background: deep, border: `3px solid ${ring}`, boxShadow: "0 3px 8px rgba(78,42,78,.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontFamily: NUM, fontSize: 12 }}>{DEPT_CODE[r.id]}</div>
-                </div>
-              </div>
-              <span style={{ fontSize: 17, flexShrink: 0 }}>🏁</span>
-              <div style={{ width: 132, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                {r.over > 0 && <Tag color={C.raspText} bg={C.raspSoft}>{r.over} trễ</Tag>}
-                <span style={{ fontSize: 12, color: C.plumSoft, fontWeight: 700 }}>{r.done}/{r.total}</span>
-                <span style={{ fontFamily: NUM, fontSize: 16, fontWeight: 800, color: deep, minWidth: 44, textAlign: "right" }}>{r.rate}%</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ marginTop: 18, display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.mintText, background: C.mintSoft, padding: "9px 15px", borderRadius: 999 }}><TrendingUp size={15} /> Dẫn đầu: {leader.name} ({leader.rate}%)</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.raspText, background: C.raspSoft, padding: "9px 15px", borderRadius: 999 }}><AlertCircle size={15} /> Cần chú ý: {laggard.name} ({laggard.rate}%)</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.plumSoft, background: C.pinkMist, padding: "9px 15px", borderRadius: 999 }}>Tổng quá hạn: {totalOver} hạng mục</span>
-      </div>
-    </Card>
-  );
-}
-
 /* ===================== Individual podium ===================== */
 function IndividualLeaderboard({ acts }) {
   const map = {};
@@ -581,11 +515,12 @@ function GanttRow({ a, idx, onOpen }) {
 }
 function TimelineView({ acts }) {
   const [cls, setCls] = useState("all"); const [dept, setDept] = useState("all"); const [q, setQ] = useState(""); const [detail, setDetail] = useState(null);
+  const dq = useDebounce(q, 300); // Debounce 300ms — giảm lag khi gõ nhanh
   const filtered = acts.filter((a) => {
     if (!a.target) return false; // Không có deadline → không vẽ được trên timeline
     if (cls !== "all" && a.cls !== cls) return false;
     if (dept !== "all" && a.dept !== dept) return false;
-    if (q.trim()) { const s = q.trim().toLowerCase(); if (![a.code, a.name, a.owner, a.id, a.vtype].some((x) => String(x || "").toLowerCase().includes(s))) return false; }
+    if (q.trim()) { const s = dq.trim().toLowerCase(); if (![a.code, a.name, a.owner, a.id, a.vtype].some((x) => String(x || "").toLowerCase().includes(s))) return false; }
     return true;
   }).sort((x, y) => parseD(x.target) - parseD(y.target));
   const todayX = pctYear(VMP_TODAY);
@@ -892,6 +827,24 @@ function ActivityDetailModal({ a, onClose }) {
 }
 function ROField({ label, value }) {
   return <div style={FIELD}><span style={LBL}>{label}</span><div style={{ ...INP, background: C.lavSoft, color: C.plumSoft, borderColor: C.lavSoft, display: "flex", alignItems: "center", minHeight: 20 }}>{value || "—"}</div></div>;
+}
+/* ===================== Skeleton loading — UX mượt khi chờ dữ liệu ===================== */
+function SkeletonPulse({ w = "100%", h = 16, r = 8 }) {
+  return <div style={{ width: w, height: h, borderRadius: r, background: `linear-gradient(90deg, ${C.pinkSoft} 25%, #fff 50%, ${C.pinkSoft} 75%)`, backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite" }} />;
+}
+function SkeletonDashboard() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: "10px 0" }}>
+      <Card variant="strong" style={{ display: "flex", alignItems: "center", gap: 18, padding: 24 }}>
+        <SkeletonPulse w={100} h={100} r={999} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}><SkeletonPulse w="70%" h={18} r={10} /><SkeletonPulse w="50%" h={13} /><SkeletonPulse w="40%" h={13} /></div>
+      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 14 }}>
+        {[1,2,3,4,5].map((i) => <Card key={i}><div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: 10 }}><SkeletonPulse w={44} h={30} r={10} /><SkeletonPulse w="65%" h={11} /><SkeletonPulse w="45%" h={9} /></div></Card>)}
+      </div>
+      <Card><div style={{ display: "flex", flexDirection: "column", gap: 10 }}><SkeletonPulse w="40%" h={16} />{[1,2,3].map((i) => <div key={i} style={{ display: "flex", gap: 10, alignItems: "center" }}><SkeletonPulse w={44} h={40} r={10} /><div style={{ flex: 1 }}><SkeletonPulse w="80%" h={12} /><SkeletonPulse w="55%" h={10} /></div></div>)}</div></Card>
+    </div>
+  );
 }
 function ProgressEditModal({ act, onClose, onSave }) {
   const raw = act._raw || {};
@@ -1227,72 +1180,8 @@ ${ovStr}`;
 }
 
 /* ===================== Kết nối Google Sheet ===================== */
-function ConnectView({ conn, onConnect, onTestWrite, onReset }) {
-  const [rUrl, setRUrl] = useState(conn.readUrl); const [wUrl, setWUrl] = useState(conn.writeUrl);
-  const inp = (val, set, ph) => <input value={val} onChange={(e) => set(e.target.value)} placeholder={ph} style={{ ...INP, fontFamily: "monospace", fontSize: 12.5 }} />;
-  const sc = conn.status === "ok" ? C.mintText : conn.status === "err" ? C.raspText : conn.status === "loading" ? C.skyText : C.marigoldText;
-  const sb = conn.status === "ok" ? C.mintSoft : conn.status === "err" ? C.raspSoft : conn.status === "loading" ? C.skySoft : C.marigoldSoft;
-  const sl = conn.status === "ok" ? "Đã kết nối" : conn.status === "err" ? "Lỗi kết nối" : conn.status === "loading" ? "Đang tải…" : "Chế độ demo (chưa kết nối)";
-  const Step = ({ n, children }) => <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}><div style={{ width: 26, height: 26, borderRadius: 999, background: GRAD, color: "#fff", fontFamily: NUM, fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</div><div style={{ fontSize: 13, color: C.plum, fontWeight: 600, lineHeight: 1.6 }}>{children}</div></div>;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <Card variant="strong">
-        <CardTitle icon={Cloud} sub="Đọc dữ liệu từ Google Sheet và ghi ngược lại khi chỉnh sửa trên web (2 chiều)">Kết nối dữ liệu Google Sheet</CardTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14, background: sb, marginBottom: 18, flexWrap: "wrap" }}>
-          <span style={{ width: 10, height: 10, borderRadius: 999, background: sc }} /><span style={{ fontFamily: TEXT, fontWeight: 800, fontSize: 14, color: sc }}>{sl}</span>
-          {conn.msg && <span style={{ fontSize: 12.5, color: C.plum, fontWeight: 600, marginLeft: "auto" }}>{conn.msg}</span>}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={FIELD}><span style={LBL}>① URL ĐỌC dữ liệu (GET) — webhook n8n hoặc Apps Script Web App</span>{inp(rUrl, setRUrl, "https://…/exec  hoặc  https://…/webhook/vmp-read")}</div>
-          <div style={FIELD}><span style={LBL}>② URL GHI dữ liệu (POST) — có thể trùng URL trên nếu dùng Apps Script</span>{inp(wUrl, setWUrl, "https://…/exec  hoặc  https://…/webhook/vmp-write")}</div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={() => onConnect(rUrl.trim(), wUrl.trim())} style={{ ...btnPrimary, display: "flex", alignItems: "center", gap: 8, padding: "12px 20px", borderRadius: 13, fontSize: 14 }}><Link2 size={16} /> Kết nối &amp; tải dữ liệu</button>
-            <button onClick={() => onTestWrite(wUrl.trim())} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderRadius: 13, border: "none", cursor: "pointer", background: C.lavSoft, color: C.lavText, fontFamily: TEXT, fontWeight: 800, fontSize: 14 }}><Save size={16} /> Kiểm tra ghi</button>
-            <button onClick={onReset} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderRadius: 13, border: "none", cursor: "pointer", background: C.pinkSoft, color: C.pinkText, fontFamily: TEXT, fontWeight: 800, fontSize: 14 }}><RefreshCw size={16} /> Khôi phục demo</button>
-          </div>
-        </div>
-      </Card>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 24 }}>
-        <Card variant="soft">
-          <CardTitle icon={Link2}>Cách hoạt động (kiến trúc đồng bộ)</CardTitle>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap", padding: "14px", borderRadius: 14, background: "#fff", fontFamily: TEXT, fontWeight: 800, fontSize: 13, color: C.plum }}><span>📊 Google Sheet</span><ChevronRight size={16} color={C.pink} /><span>🔁 n8n / Apps Script</span><ChevronRight size={16} color={C.pink} /><span>🖥️ VMP Monitor</span></div>
-            <Step n="1">App gọi <b>GET</b> tới URL ① → nhận JSON <code>{`{objects, activities}`}</code> và hiển thị.</Step>
-            <Step n="2">Khi Thêm/Sửa/Xoá đối tượng → app gửi <b>POST</b> tới URL ② → ghi ngược vào Google Sheet.</Step>
-            <Step n="3">n8n lập lịch đồng bộ + gửi cảnh báo (Telegram/email) theo quy tắc T‑60/T‑5.</Step>
-          </div>
-        </Card>
-        <Card variant="soft">
-          <CardTitle icon={FileText}>Định dạng dữ liệu &amp; lưu ý</CardTitle>
-          <div style={{ fontFamily: "monospace", fontSize: 12, background: "#fff", border: `1.5px solid ${C.pinkSoft}`, borderRadius: 12, padding: "12px 14px", color: C.plum, lineHeight: 1.6, overflowX: "auto" }}>
-            {`GET (n8n) → { ok, count,`}<br />{`  rows:[{ ma, ten, phan_loai,`}<br />{`  bo_phan, qa, dl_vmp, tt_vmp… }] }`}<br /><br />{`POST (n8n) → { action:"updateRow",`}<br />{`  id, patch:{ tt_vmp, ngay_vmp… } }`}
-          </div>
-          <div style={{ marginTop: 12, fontSize: 12, color: C.plumSoft, fontWeight: 600, lineHeight: 1.7 }}>• App <b style={{ color: C.mintText }}>tự dịch</b> dữ liệu n8n sang đối tượng/hạng mục — không cần sửa Sheet.<br />• Cũng nhận định dạng cũ <code>{`{objects, activities}`}</code> (Apps Script).<br />• POST dùng <b style={{ color: C.plum }}>text/plain</b> để tránh CORS preflight.<br />• URL <b style={{ color: C.mintText }}>được lưu</b> &amp; tự kết nối lại khi mở trang.</div>
-        </Card>
-        <Card variant="soft">
-          <CardTitle icon={Cloud}>Trạng thái nguồn</CardTitle>
-          <div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 600, lineHeight: 1.8 }}>
-            • Nguồn hiện tại: <b style={{ color: C.plum }}>{conn.source === "n8n" ? "Webhook n8n" : conn.source === "native" ? "Apps Script (objects/activities)" : "— (demo)"}</b><br />
-            • Ghi trạng thái/ngày: <b style={{ color: C.mintText }}>updateRow theo ID</b> (n8n hỗ trợ).<br />
-            • Thêm/sửa/xoá đối tượng trên Sheet: cần bổ sung nhánh <code>upsertObject</code>/<code>deleteObject</code> trong n8n (xem README).
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
 
 /* ===================== Overview ===================== */
-function MiniAlert({ a }) {
-  const al = a.alert;
-  return (
-    <div className="vmp-row" style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 14, background: "#fff", border: `1px solid ${al.kind === "over" ? C.raspSoft : C.marigoldSoft}` }}>
-      <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, background: al.kind === "over" ? C.raspSoft : C.marigoldSoft, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: NUM, fontWeight: 800, fontSize: 15, color: al.kind === "over" ? C.raspText : C.marigoldText }}>{Math.abs(al.dleft)}</span><span style={{ fontSize: 8.5, color: C.plumSoft, fontWeight: 700 }}>ngày</span></div>
-      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontFamily: TEXT, fontSize: 13, fontWeight: 800, color: C.plum, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div><div style={{ fontSize: 11.5, color: C.plumSoft, fontWeight: 600 }}>{a.vtype} · mốc {al.stage}</div></div>
-      <Tag color={al.kind === "over" ? C.raspText : C.marigoldText} bg={al.kind === "over" ? C.raspSoft : C.marigoldSoft}>{al.kind === "over" ? "Quá hạn" : "Tới hạn"}</Tag>
-    </div>
-  );
-}
 function Overview({ acts, setView }) {
   const e = tally(acts), d = docTally(acts);
   const overdue = acts.filter((a) => a.alert && a.alert.kind === "over");
@@ -1807,14 +1696,14 @@ export default function App() {
   const mainRef = useRef(null);
   useEffect(() => { if (mainRef.current) mainRef.current.scrollTop = 0; }, [view]);
 
-  const connectSheet = async (readUrl, writeUrl) => {
+  const connectSheet = async (readUrl, writeUrl, force = false) => {
     if (!readUrl) { setConn((c) => ({ ...c, writeUrl, msg: "Vui lòng nhập URL đọc dữ liệu." })); return; }
     setConn({ readUrl, writeUrl, status: "loading", msg: "Đang tải dữ liệu…" });
     try {
-      const data = await fetchVmpData(readUrl);           // adapter: tự nhận diện n8n hoặc định dạng gốc
+      const data = await fetchVmpData(readUrl, force);   // force=true bỏ cache (khi bấm "Làm mới")
       if (Array.isArray(data.objects) && data.objects.length) setObjects(data.objects);
       if (Array.isArray(data.activities) && data.activities.length) setActs(data.activities);
-      saveConn(readUrl, writeUrl);                          // ghi nhớ URL cho lần sau
+      saveConn(readUrl, writeUrl);
       const tag = data.source === "n8n" ? ` · nguồn n8n (${data.count} dòng)` : "";
       setConn({ readUrl, writeUrl, status: "ok", source: data.source, msg: `Đã tải ${data.objects.length} đối tượng · ${data.activities.length} hạng mục${tag} ✓` });
     } catch (e) {
@@ -1855,7 +1744,7 @@ export default function App() {
     try { const r = await postToN8n(writeUrl, buildPing()); const j = await r.json().catch(() => null); setConn((c) => ({ ...c, writeUrl, msg: `Ghi thử OK (HTTP ${r.status}${j && j.pong ? " · pong ✓" : ""})` })); }
     catch (e) { setConn((c) => ({ ...c, writeUrl, msg: "Lỗi ghi thử: " + (e && e.message ? e.message : "không rõ") })); }
   };
-  const reloadData = () => { const c = loadConn() || {}; connectSheet(c.readUrl || conn.readUrl, c.writeUrl || conn.writeUrl); };
+  const reloadData = () => { const c = loadConn() || {}; connectSheet(c.readUrl || conn.readUrl, c.writeUrl || conn.writeUrl, true); };
 
   // DASHBOARD tier — cập nhật ngày & trạng thái thực tế 1 hạng mục (mọi tài
   // khoản đều được phép). Gửi ĐỦ 9 trường (đã điền sẵn giá trị hiện có) để
@@ -1904,6 +1793,7 @@ export default function App() {
       .rise{animation:rise .6s cubic-bezier(.22,1,.36,1) both;}
       @keyframes spin{to{transform:rotate(360deg)}}
       .spin{animation:spin .9s linear infinite;}
+      @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
       input::placeholder{color:#B79BB2;}
       select{appearance:none;}
       @media (max-width:760px){.login-grid{grid-template-columns:1fr!important;}}
@@ -1926,17 +1816,18 @@ export default function App() {
         <div style={{ position: "relative", zIndex: 1 }}>
           <Topbar title={title} user={user} sub={SUBS[view]} onRefresh={reloadData} refreshing={conn.status === "loading"} />
           <div style={{ padding: "0 34px 38px" }}>
-            {objects.length === 0 && (
+            {objects.length === 0 && conn.status === "loading" && <SkeletonDashboard />}
+            {objects.length === 0 && conn.status !== "loading" && (
               <div style={{ marginBottom: 22, padding: "16px 18px", borderRadius: 16, border: `1.5px solid ${conn.status === "err" ? C.raspSoft : C.pinkSoft}`, background: conn.status === "err" ? C.raspSoft : "#fff", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                 <div style={{ width: 44, height: 44, borderRadius: 13, flexShrink: 0, background: conn.status === "err" ? "#fff" : C.pinkMist, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {conn.status === "loading" ? <RefreshCw size={22} color={C.pink} className="spin" /> : conn.status === "err" ? <AlertCircle size={22} color={C.raspText} /> : <Cloud size={22} color={C.pink} />}
+                  {conn.status === "err" ? <AlertCircle size={22} color={C.raspText} /> : <Cloud size={22} color={C.pink} />}
                 </div>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <div style={{ fontFamily: TEXT, fontWeight: 800, fontSize: 15, color: conn.status === "err" ? C.raspText : C.plum }}>
-                    {conn.status === "loading" ? "Đang tải dữ liệu từ Google Sheet…" : conn.status === "err" ? "Chưa tải được dữ liệu" : conn.readUrl ? "Đang chờ đồng bộ với Google Sheet…" : "Chưa cấu hình kết nối dữ liệu"}
+                    {conn.status === "err" ? "Chưa tải được dữ liệu" : conn.readUrl ? "Đang chờ đồng bộ…" : "Chưa cấu hình kết nối"}
                   </div>
                   <div style={{ fontSize: 12.5, color: C.plumSoft, fontWeight: 600, marginTop: 3 }}>
-                    {conn.msg || (conn.readUrl ? "Nếu chờ lâu, bấm Làm mới hoặc kiểm tra workflow n8n đang Active." : "Nhúng URL webhook n8n trong file src/lib/config.js rồi tải lại trang.")}
+                    {conn.msg || (conn.readUrl ? "Bấm Làm mới hoặc kiểm tra n8n Active." : "Nhúng URL webhook trong config.js.")}
                   </div>
                 </div>
                 {conn.readUrl && <button onClick={reloadData} style={{ ...btnPrimary, padding: "10px 18px", borderRadius: 12, display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}><RefreshCw size={15} /> Thử lại</button>}
